@@ -1,10 +1,12 @@
 This is the bioinformatics pipeline for 
 
-1) stress-responsive lncRNA identification
-2) Categorization of lncRNAs
-3) Analysis of Differentially transcribed lncRNAs
-4) Identification of potential cis- and trans-targets genes
-5) Comparison and visualization of transcript levels of lncRNAs and genes
+1) General RNAseq and DEG analysis
+2) stress-responsive lncRNA identification
+3) Categorization of lncRNAs
+4) Analysis of Differentially transcribed lncRNAs
+5) Identification of potential cis- and trans-targets genes
+6) Comparison and visualization of transcript levels of lncRNAs and genes
+7) Analysis of TE activation
 
 
 Transcriptomic and epigenetic responses shed light on soybean resistance to _Phytophthora sansomeana_
