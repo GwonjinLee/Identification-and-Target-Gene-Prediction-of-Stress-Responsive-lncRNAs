@@ -1,0 +1,2838 @@
+---
+title: "DEG analysis for soybean project"
+author: "Gwonjin Lee"
+date: "04/14/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## Install DEseq2 & Dependencies
+
+
+```{r,warning=FALSE, echo=FALSE}
+#BiocManager::install("BiocUpgrade")
+##??biocUpgrade
+#update.packages("BiocManager::install")
+
+#BiocManager::install("DESeq2")
+#BiocManager::install("rlang")
+
+library(rlang)
+library(data.table)
+library(backports)
+library(readxl)
+library(httpuv)
+#library(haven)
+library(tidyr)
+library(Rcpp)
+library(purrr)
+library(colorspace)
+library(checkmate)
+library(tibble)
+library(S4Vectors)
+library(DelayedArray)
+library(GenomicRanges)
+library(IRanges)
+library(limma)
+library(statmod)
+library(stringi)
+library(RColorBrewer)
+library(gplots)
+library(affy)
+library(ggplot2)
+library(gtools)
+library(ggpubr)
+library(genefilter)
+library(ggrepel)
+library(EnhancedVolcano)
+library(magrittr)
+library(gridExtra)
+library(grid)
+library(cowplot)
+library(gtable)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(Rmisc)
+library(mime)
+library(pheatmap)
+library(viridis)
+library(tidyverse)
+library(later)
+library(spdep)
+library(zip)
+library(car)
+library(FSA)
+require(scales)
+require(stats)
+library(PMCMR)
+library(stats)
+
+library(agricolae)
+library(DESeq2)
+library(lemon)
+library(patchwork)
+
+```
+
+#DEG analysis
+
+## Load data
+
+```{r,warning=FALSE, echo=FALSE}
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/counts")
+
+filelist = list.files(pattern = "*.txt") # Make a file list from all count text files
+
+filelist <- mixedsort(filelist) # Sort the file name
+
+datafr = do.call(cbind,lapply(filelist,function(fn)read.table(fn,header=FALSE, sep="\t")[,2])) #merge all count files
+ID <- read.delim("cf_2hc2.count.txt", head = FALSE)[,1] # for the first column
+ID2 <- as.character(ID)
+
+count0 = cbind(ID2, datafr) #merge with gene name
+countdata <- count0[,-1]
+rownames(countdata) <- count0[,1] 
+sample.names <- sub(".count.txt", "", filelist) 
+
+colnames(countdata) <- sample.names # add column names
+mode(countdata)
+mode(countdata) = "numeric" #convert the class of a matrix from character to numeric
+class(countdata)
+
+head(countdata)[,c(1:6)]
+
+tail(countdata)[,c(1:6)]
+
+DF <- countdata[-c(52873:52877),]
+
+tail(DF)[,c(1:6)]
+
+
+
+#statsPerSample <- data.frame(t(apply(countdata, 2, summary)))
+#head(statsPerSample)
+
+# Define a function to draw a scatter plot for a pair of variables (samples) with density colors
+#plotFun <- function(x,y){ 
+#  dns <- densCols(x,y); 
+#  points(x,y, col=dns, pch=".", panel.first=grid());  
+#  abline(a=0, b=1, col="brown")
+#  }
+
+
+# Plot the scatter plot for a few pairs of variables selected at random
+#set.seed(123) # forces the random number generator to produce fixed results
+#pairs(log2(countdata[,sample(ncol(countdata),5)] + 1), 
+#      panel=plotFun, lower.panel = NULL)
+
+
+# Load the pre-made coldata to represent experimental designs
+coldata <- read.csv("coldata.csv", header = T)
+rownames(coldata) <- coldata$ID
+head(coldata)
+
+
+```
+
+
+##Make data frames with grouping and run the DESeq2
+```{r}
+#Make a data frame form a matrix
+dds <- DESeqDataSetFromMatrix(
+countData = DF,
+colData = coldata,
+design = ~ Line + Inoculation + hpi)
+
+#Grouping and run the DESeq2
+dds$group <- factor(paste0(dds$Line, dds$Inoculation, dds$hpi))
+design(dds) <- ~ group
+dds <- DESeq(dds)
+resultsNames(dds)
+
+#plotDispEsts(dds, main= "All samples") #Dispersion plot
+
+#ddsPra <- DESeq(dds ,fitLine = "parametric") #Test another option for fitLine as parametric
+#plotDispEsts(ddsPra, main= "All samples_parametric") #Dispersion plot for parametric
+#ddsmean <- DESeq(dds ,fitLine = "mean") #Test another option for fitLine as mean
+#plotDispEsts(ddsmean, main= "All samples_mean") #Dispersion plot for mean
+
+```
+
+
+#Size factor and library size
+```{r}
+
+dds.SF <- estimateSizeFactors(dds) #Check the size factors calculated by geometric mean
+print(sizeFactors(dds.SF))
+
+
+
+#Make dataframes
+df.SF <- as.data.frame(sizeFactors(dds.SF))
+df.colsum <- as.data.frame(colSums(counts(dds.SF)))
+df.SF.LS <- cbind(coldata,df.SF,df.colsum)
+
+#save library size
+#write.csv(colSums(counts(dds.SF)),  file = "../DESeq2/results/libarysize.csv")
+
+#Correlation between size factor and library size with tissue info
+cor.test(sizeFactors(dds.SF), colSums(counts(dds.SF)))
+
+#Make plots for size factor vs library
+
+plot(sizeFactors(dds.SF), colSums(counts(dds.SF)),
+     xlab = "Size factors",
+     ylab = "Library sizes",
+     pch=1, cex=1, col="black") #Correlation between size factor and library size
+abline(lm(df.colsum  ~ df.SF + 0), col="red")
+
+df.SF.LS$Inoculation <- factor(df.SF.LS$Inoculation , 
+                          levels = c( "control", "inoculated"))
+
+
+model.y <- lm(colSums(counts(dds.SF)) ~ sizeFactors(dds.SF), df.SF.LS)
+coef.y <- coef(model.y)
+ggplot(df.SF.LS, 
+       aes(x=sizeFactors(dds.SF), y=colSums(counts(dds.SF)), color=Line, shape=Inoculation)) +
+      geom_point(size=3) + 
+      xlab("Size factor (median of ratios)") +
+      ylab("Library size (total counts)") +
+      geom_abline(intercept=coef.y[1], slope=coef.y[2], size=1.1, color= "grey50")
+
+model.X <- lm(sizeFactors(dds.SF) ~ colSums(counts(dds.SF)), df.SF.LS)
+coef.X <- coef(model.X)
+
+#ggplot(df.SF.LS, 
+#       aes(x=colSums(counts(dds.SF)), y=sizeFactors(dds.SF), color=Inoculation, label = rownames(df.SF.LS))) +
+#      geom_text(hjust =-0.1,
+#                aes(label=ifelse(BAM_name=="X_R_38_POST_r2", rownames(df.SF.LS),""))) +
+#      geom_point(size=3) + 
+#      xlab("Library size (total counts)") +
+#      ylab("Size factor (median of ratios)") +
+#  geom_abline(intercept=coef.X[1], slope=coef.X[2], size=1.1, color= "grey50") +
+#  theme_bw()+
+#  theme(panel.grid.major = element_blank(), 
+#        panel.grid.minor = element_blank(),
+#        panel.background = element_blank())
+
+
+#Extract the normalized counts
+NormalizedCount <- counts(dds.SF, normalized = T)
+tail(NormalizedCount)
+#write.csv(NormalizedCount, file="../DESeq2/results/Normalized_countsGTF.csv", row.names = TRUE)
+
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+
+#Cook's distance
+
+png(filename = "plots/cooks_distance.png", width = 14, height = 6, units = "in",  res = 300 )
+par(mfrow=c(1,1), mar = c(10, 3, 3, 1))
+boxplot(log10(assays(dds)[["cooks"]]), range=0, las=2, main="Cook's distances", col = dds$Line) # Check any outliers by Cook's D 
+dev.off()
+
+
+
+```
+
+
+
+
+
+
+## Check for distribution of counts before and after normalization in different ways
+```{r}
+
+# Histogram
+
+hist(as.matrix(log2(counts(dds, normalized=FALSE)+1)), col="grey15", border="white",
+     main="Log2-transformed counts per gene", xlab="log2(counts+1)", ylab="Number of genes", 
+     las=1, cex.axis=0.7, ylim=c(0,700000)) # before normalization
+hist(as.matrix(log2(counts(dds, normalized=TRUE)+1)), col="grey15", border="white",
+     main="Log2-transformed normalized counts per gene", xlab="log2(normalized counts+1)", ylab="Number of genes", 
+     las=1, cex.axis=0.7, ylim=c(0,700000)) # after normalization
+
+
+#Plot the log2-transformed counts before and after normalization
+group.col <- c("lightblue","orange")[coldata$Tissue]
+
+dev.off()
+
+png(filename = "plots/raw_normalized_counts.png", width = 11, height = 13, units = "in",  res = 300 )
+par(mfrow=c(1,2), mar = c(4.2, 10, 3, 1))
+boxplot(log2(counts(dds.SF, normalized=FALSE)+1),xlab="log2(counts+1)", main="Raw counts" , las = 1, horizontal = TRUE, pch = ",", col = group.col)
+boxplot(log2(counts(dds.SF, normalized=TRUE)+1), xlab="log2(normalized counts)", main="Normalized counts", las = 1, horizontal = TRUE, pch = ",", col = group.col)
+dev.off()
+
+
+
+
+```
+
+## Sample distance by Heatmap and PCA
+```{r}
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+# Variance stabilizing transformation (can be also done with rlog, but it will take so long time)
+vsd <- vst(dds, blind = TRUE)
+
+#Log <- rlog(dds, blind = TRUE)
+
+
+#Calculate sample distance
+sampleDists <- dist( t( assay(vsd) ) )
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste(vsd$Line, vsd$Inoculation, vsd$hpi, vsd$rep, sep="-" )
+colnames(sampleDistMatrix) <- NULL
+
+colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+heatmap_VST <- heatmap.2( sampleDistMatrix, trace="none", col=colours, margins = c(5,10))
+
+heatmap.2( sampleDistMatrix, trace="none", col=colours, margins = c(5,10))
+
+
+#sampleDistsLog <- dist( t( assay(Log) ) )
+#sampleDistMatrixLog <- as.matrix( sampleDistsLog )
+#rownames(sampleDistMatrixLog) <- paste(Log$Individual, Log$Tissue, Log$Inoculation, sep="-" )
+#colnames(sampleDistMatrixLog) <- NULL
+#colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+#heatmap.2( sampleDistMatrixLog, trace="none", col=colours, margins = c(5,10))
+
+#Test PCA
+plotPCA(vsd, intgroup=c("Inoculation", "hpi", "Line"))
+
+#Visualization of PCA (vst)
+
+pcaData <- plotPCA(vsd, intgroup=c("Line", "Inoculation", "hpi"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+pcaData$Line <- factor(pcaData$Line , 
+                          levels = c("Colfax", "NE2701", "Senaki", "Williams82"))
+
+pcaData$Inoculation <- factor(pcaData$Inoculation , 
+                          levels = c( "control", "inoculated"))
+
+pcaData$hpi <- factor(pcaData$hpi , 
+                          levels = c( "2", "4", "8", "16"))
+
+
+PCA <- ggplot(pcaData, aes(PC1, PC2, color= hpi, shape= Line, size = Inoculation) ) +
+  geom_point(alpha = 0.6) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+# coord_fixed() +
+  theme_bw() +
+#  ggtitle("PCA of the samples (VST)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple", "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+PCA 
+
+png(filename = "plots/PCA_VST.png", width = 6, height = 5, units = "in",  res = 300 )
+PCA
+dev.off()
+
+
+
+pdf("plots/S1 Fig.pdf", width = 6, height = 5)
+PCA
+dev.off()
+
+
+
+textpca <- ggplot(pcaData, aes(PC1, PC2, color=hpi, shape=Line, size = Inoculation, label = rownames(coldata))) +
+   geom_text(check_overlap = FALSE, hjust = -0.1, nudge_y = 0.05) +
+  geom_point(size=3) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+#  coord_fixed() +
+  theme_bw() +
+  ggtitle("PCA of the samples with ID (VST)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple",  "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+textpca
+
+png(filename = "plots/PCA_VST_wID.png", width = 13, height = 10, units = "in",  res = 300 )
+textpca
+dev.off()
+
+
+##
+```
+
+#Visualization of PCA (rlog)
+
+```{r}
+#Test PCA
+plotPCA(Log, intgroup=c("Inoculation", "hpi", "Line"))
+
+
+pcaData_rlog <- plotPCA(Log, intgroup=c("Line", "Inoculation", "hpi"), returnData=TRUE)
+percentVar_rlog <- round(100 * attr(pcaData_rlog, "percentVar"))
+
+pcaData_rlog$Line <- factor(pcaData_rlog$Line , 
+                          levels = c("cf", "ne", "sk", "wm"))
+
+pcaData_rlog$Inoculation <- factor(pcaData_rlog$Inoculation , 
+                          levels = c( "control", "inoculated"))
+
+pcaData_rlog$hpi <- factor(pcaData_rlog$hpi , 
+                          levels = c( "2", "4", "8", "16"))
+
+
+PCA_rlog <- ggplot(pcaData_rlog, aes(PC1, PC2, color= hpi, shape= Line, size = Inoculation) ) +
+  geom_point(alpha = 0.6) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+#  coord_fixed() +
+  theme_bw() +
+  xlim(-10,2)+
+  ggtitle("PCA of the samples (rlog)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple", "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+PCA_rlog 
+
+png(filename = "plots/PCA_rlog.png", width = 6, height = 5, units = "in",  res = 300 )
+PCA_rlog
+dev.off()
+
+textpca_rlog <- ggplot(pcaData_rlog, aes(PC1, PC2, color=hpi, shape=Line, size = Inoculation, label = rownames(coldata))) +
+   geom_text(check_overlap = FALSE, hjust = -0.1, nudge_y = 0.05) +
+  geom_point(size=3) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+  coord_fixed() +
+  theme_bw() +
+  ggtitle("PCA of the samples with ID (VST)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple",  "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+textpca_rlog
+
+png(filename = "plots/PCA_rlog_wID.png", width = 13, height = 10, units = "in",  res = 300 )
+textpca_rlog
+dev.off()
+
+
+```
+
+
+
+#Baisic DEG
+```{r}
+
+#filtering
+ddsMF <- dds
+keep <- rowSums(counts(ddsMF, normalized=TRUE) >= 10 ) >= 2
+ddsMF <- ddsMF[keep,]
+
+ddsMF$Inoculation <- factor(ddsMF$Inoculation, levels=c("control","inoculated"))
+ 
+ddsMF$Line <- factor(ddsMF$Line, levels=c( "Colfax", "NE2701", "Senaki", "Williams82"))
+
+ddsMF$hpi <- factor(ddsMF$hpi, levels=c( "2", "4", "8", "16"))
+
+levels(ddsMF$hpi)
+levels(ddsMF$Line)
+
+# DESeq for all possible variable and interactions
+design(ddsMF) <- ~ hpi + Line + Inoculation + Line:Inoculation + hpi:Line + hpi:Inoculation + Line:hpi:Inoculation
+
+ddsMF <- DESeq(ddsMF)
+ddsMF
+resultsNames(ddsMF)
+
+resMF <- results(ddsMF)
+resMF
+resMF_Sig  = subset(resMF, padj<0.05)
+resMF_Sig
+
+
+# Subset for each Line and run DESeq
+
+coldata_1 = colData(ddsMF) 
+countdata_1  = assay(ddsMF) 
+
+```
+
+## DEG analysis for each sample
+
+```{r}
+
+#cf
+##all
+coldata_cf = coldata_1[coldata_1$Line %in% "Colfax",]
+
+countdata_cf = countdata_1[,coldata_1$Line %in% "Colfax" ]
+
+dds_cf = DESeqDataSetFromMatrix(countData = countdata_cf, colData = coldata_cf, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_cf  = DESeq(dds_cf)
+resultsNames(dds_cf)
+res_cf = results(dds_cf, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_cf2h = coldata_cf[coldata_cf$hpi %in% 2,]
+
+countdata_cf2h = countdata_cf[,coldata_cf$hpi %in% 2]
+
+dds_cf2h = DESeqDataSetFromMatrix(countData = countdata_cf2h, colData = coldata_cf2h, design = ~ Inoculation)
+
+dds_cf2h  = DESeq(dds_cf2h)
+resultsNames(dds_cf2h)
+res.cf2h = results(dds_cf2h)
+res.cf2h_sig  = subset(res.cf2h, padj<0.05)
+
+dim(res.cf2h_sig)
+#write.csv( as.data.frame(res.cf2h_sig), "sig_genes/res.cf2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_cf4h = coldata_cf[coldata_cf$hpi %in% 4,]
+
+countdata_cf4h = countdata_cf[,coldata_cf$hpi %in% 4]
+
+dds_cf4h = DESeqDataSetFromMatrix(countData = countdata_cf4h, colData = coldata_cf4h, design = ~ Inoculation)
+
+dds_cf4h  = DESeq(dds_cf4h)
+resultsNames(dds_cf4h)
+res.cf4h = results(dds_cf4h)
+res.cf4h_sig  = subset(res.cf4h, padj<0.05)
+
+dim(res.cf4h_sig)
+#write.csv( as.data.frame(res.cf4h_sig), "sig_genes/res.cf4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_cf8h = coldata_cf[coldata_cf$hpi %in% 8,]
+
+countdata_cf8h = countdata_cf[,coldata_cf$hpi %in% 8]
+
+dds_cf8h = DESeqDataSetFromMatrix(countData = countdata_cf8h, colData = coldata_cf8h, design = ~ Inoculation)
+
+dds_cf8h  = DESeq(dds_cf8h)
+resultsNames(dds_cf8h)
+res.cf8h = results(dds_cf8h)
+res.cf8h_sig  = subset(res.cf8h, padj<0.05)
+
+dim(res.cf8h_sig)
+#write.csv( as.data.frame(res.cf8h_sig), "sig_genes/res.cf8h_sig.csv", row.names = TRUE)
+
+##16h
+coldata_cf16h = coldata_cf[coldata_cf$hpi %in% 16,]
+
+countdata_cf16h = countdata_cf[,coldata_cf$hpi %in% 16]
+
+dds_cf16h = DESeqDataSetFromMatrix(countData = countdata_cf16h, colData = coldata_cf16h, design = ~ Inoculation)
+
+dds_cf16h  = DESeq(dds_cf16h)
+resultsNames(dds_cf16h)
+res.cf16h = results(dds_cf16h)
+res.cf16h_sig  = subset(res.cf16h, padj<0.05)
+
+dim(res.cf16h_sig)
+#write.csv( as.data.frame(res.cf16h_sig), "sig_genes/res.cf16h_sig.csv", row.names = TRUE)
+
+#ne
+
+##all
+coldata_ne = coldata_1[coldata_1$Line %in% "NE2701",]
+
+countdata_ne = countdata_1[,coldata_1$Line %in% "NE2701" ]
+
+dds_ne = DESeqDataSetFromMatrix(countData = countdata_ne, colData = coldata_ne, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_ne  = DESeq(dds_ne)
+resultsNames(dds_ne)
+res_ne = results(dds_ne, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_ne2h = coldata_ne[coldata_ne$hpi %in% 2,]
+
+countdata_ne2h = countdata_ne[,coldata_ne$hpi %in% 2]
+
+dds_ne2h = DESeqDataSetFromMatrix(countData = countdata_ne2h, colData = coldata_ne2h, design = ~ Inoculation)
+
+dds_ne2h  = DESeq(dds_ne2h)
+resultsNames(dds_ne2h)
+res.ne2h = results(dds_ne2h)
+res.ne2h_sig  = subset(res.ne2h, padj<0.05)
+
+dim(res.ne2h_sig)
+#write.csv( as.data.frame(res.ne2h_sig), "sig_genes/res.ne2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_ne4h = coldata_ne[coldata_ne$hpi %in% 4,]
+
+countdata_ne4h = countdata_ne[,coldata_ne$hpi %in% 4]
+
+dds_ne4h = DESeqDataSetFromMatrix(countData = countdata_ne4h, colData = coldata_ne4h, design = ~ Inoculation)
+
+dds_ne4h  = DESeq(dds_ne4h)
+resultsNames(dds_ne4h)
+res.ne4h = results(dds_ne4h)
+res.ne4h_sig  = subset(res.ne4h, padj<0.05)
+
+dim(res.ne4h_sig)
+#write.csv( as.data.frame(res.ne4h_sig), "sig_genes/res.ne4h_sig.csv", row.names = TRUE)
+
+##8h
+coldata_ne8h = coldata_ne[coldata_ne$hpi %in% 8,]
+
+countdata_ne8h = countdata_ne[,coldata_ne$hpi %in% 8]
+
+dds_ne8h = DESeqDataSetFromMatrix(countData = countdata_ne8h, colData = coldata_ne8h, design = ~ Inoculation)
+
+dds_ne8h  = DESeq(dds_ne8h)
+resultsNames(dds_ne8h)
+res.ne8h = results(dds_ne8h)
+res.ne8h_sig  = subset(res.ne8h, padj<0.05)
+
+dim(res.ne8h_sig)
+#write.csv( as.data.frame(res.ne8h_sig), "sig_genes/res.ne8h_sig.csv", row.names = TRUE)
+
+
+##16h
+coldata_ne16h = coldata_ne[coldata_ne$hpi %in% 16,]
+
+countdata_ne16h = countdata_ne[,coldata_ne$hpi %in% 16]
+
+dds_ne16h = DESeqDataSetFromMatrix(countData = countdata_ne16h, colData = coldata_ne16h, design = ~ Inoculation)
+
+dds_ne16h  = DESeq(dds_ne16h)
+resultsNames(dds_ne16h)
+res.ne16h = results(dds_ne16h)
+res.ne16h_sig  = subset(res.ne16h, padj<0.05)
+
+dim(res.ne16h_sig)
+#write.csv( as.data.frame(res.ne16h_sig), "sig_genes/res.ne16h_sig.csv", row.names = TRUE)
+
+
+#sk
+##all
+coldata_sk = coldata_1[coldata_1$Line %in% "Senaki",]
+
+countdata_sk = countdata_1[,coldata_1$Line %in% "Senaki" ]
+
+dds_sk = DESeqDataSetFromMatrix(countData = countdata_sk, colData = coldata_sk, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_sk  = DESeq(dds_sk)
+resultsNames(dds_sk)
+res_sk = results(dds_sk, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_sk2h = coldata_sk[coldata_sk$hpi %in% 2,]
+
+countdata_sk2h = countdata_sk[,coldata_sk$hpi %in% 2]
+
+dds_sk2h = DESeqDataSetFromMatrix(countData = countdata_sk2h, colData = coldata_sk2h, design = ~ Inoculation)
+
+dds_sk2h  = DESeq(dds_sk2h)
+resultsNames(dds_sk2h)
+res.sk2h = results(dds_sk2h)
+res.sk2h_sig  = subset(res.sk2h, padj<0.05)
+
+dim(res.sk2h_sig)
+#write.csv( as.data.frame(res.sk2h_sig), "sig_genes/res.sk2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_sk4h = coldata_sk[coldata_sk$hpi %in% 4,]
+
+countdata_sk4h = countdata_sk[,coldata_sk$hpi %in% 4]
+
+dds_sk4h = DESeqDataSetFromMatrix(countData = countdata_sk4h, colData = coldata_sk4h, design = ~ Inoculation)
+
+dds_sk4h  = DESeq(dds_sk4h)
+resultsNames(dds_sk4h)
+res.sk4h = results(dds_sk4h)
+res.sk4h_sig  = subset(res.sk4h, padj<0.05)
+
+dim(res.sk4h_sig)
+#write.csv( as.data.frame(res.sk4h_sig), "sig_genes/res.sk4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_sk8h = coldata_sk[coldata_sk$hpi %in% 8,]
+
+countdata_sk8h = countdata_sk[,coldata_sk$hpi %in% 8]
+
+dds_sk8h = DESeqDataSetFromMatrix(countData = countdata_sk8h, colData = coldata_sk8h, design = ~ Inoculation)
+
+dds_sk8h  = DESeq(dds_sk8h)
+resultsNames(dds_sk8h)
+res.sk8h = results(dds_sk8h)
+res.sk8h_sig  = subset(res.sk8h, padj<0.05)
+
+dim(res.sk8h_sig)
+#write.csv( as.data.frame(res.sk8h_sig), "sig_genes/res.sk8h_sig.csv", row.names = TRUE)
+
+
+##16h
+coldata_sk16h = coldata_sk[coldata_sk$hpi %in% 16,]
+
+countdata_sk16h = countdata_sk[,coldata_sk$hpi %in% 16]
+
+dds_sk16h = DESeqDataSetFromMatrix(countData = countdata_sk16h, colData = coldata_sk16h, design = ~ Inoculation)
+
+dds_sk16h  = DESeq(dds_sk16h)
+resultsNames(dds_sk16h)
+res.sk16h = results(dds_sk16h)
+res.sk16h_sig  = subset(res.sk16h, padj<0.05)
+
+dim(res.sk16h_sig)
+#write.csv( as.data.frame(res.sk16h_sig), "sig_genes/res.sk16h_sig.csv", row.names = TRUE)
+
+
+#wm
+
+##all
+coldata_wm = coldata_1[coldata_1$Line %in% "Williams82",]
+
+countdata_wm = countdata_1[,coldata_1$Line %in% "Williams82" ]
+
+dds_wm = DESeqDataSetFromMatrix(countData = countdata_wm, colData = coldata_wm, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_wm  = DESeq(dds_wm)
+resultsNames(dds_wm)
+res_wm = results(dds_wm, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_wm2h = coldata_wm[coldata_wm$hpi %in% 2,]
+
+countdata_wm2h = countdata_wm[,coldata_wm$hpi %in% 2]
+
+dds_wm2h = DESeqDataSetFromMatrix(countData = countdata_wm2h, colData = coldata_wm2h, design = ~ Inoculation)
+
+dds_wm2h  = DESeq(dds_wm2h)
+resultsNames(dds_wm2h)
+res.wm2h = results(dds_wm2h)
+res.wm2h_sig  = subset(res.wm2h, padj<0.05)
+
+dim(res.wm2h_sig)
+#write.csv( as.data.frame(res.wm2h_sig), "sig_genes/res.wm2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_wm4h = coldata_wm[coldata_wm$hpi %in% 4,]
+
+countdata_wm4h = countdata_wm[,coldata_wm$hpi %in% 4]
+
+dds_wm4h = DESeqDataSetFromMatrix(countData = countdata_wm4h, colData = coldata_wm4h, design = ~ Inoculation)
+
+dds_wm4h  = DESeq(dds_wm4h)
+resultsNames(dds_wm4h)
+res.wm4h = results(dds_wm4h)
+res.wm4h_sig  = subset(res.wm4h, padj<0.05)
+
+dim(res.wm4h_sig)
+#write.csv( as.data.frame(res.wm4h_sig), "sig_genes/res.wm4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_wm8h = coldata_wm[coldata_wm$hpi %in% 8,]
+
+countdata_wm8h = countdata_wm[,coldata_wm$hpi %in% 8]
+
+dds_wm8h = DESeqDataSetFromMatrix(countData = countdata_wm8h, colData = coldata_wm8h, design = ~ Inoculation)
+
+dds_wm8h  = DESeq(dds_wm8h)
+resultsNames(dds_wm8h)
+res.wm8h = results(dds_wm8h)
+res.wm8h_sig  = subset(res.wm8h, padj<0.05)
+
+dim(res.wm8h_sig)
+#write.csv( as.data.frame(res.wm8h_sig), "sig_genes/res.wm8h_sig.csv", row.names = TRUE)
+
+
+
+##16h
+coldata_wm16h = coldata_wm[coldata_wm$hpi %in% 16,]
+
+countdata_wm16h = countdata_wm[,coldata_wm$hpi %in% 16]
+
+dds_wm16h = DESeqDataSetFromMatrix(countData = countdata_wm16h, colData = coldata_wm16h, design = ~ Inoculation)
+
+dds_wm16h  = DESeq(dds_wm16h)
+resultsNames(dds_wm16h)
+res.wm16h = results(dds_wm16h)
+res.wm16h_sig  = subset(res.wm16h, padj<0.05)
+
+dim(res.wm16h_sig)
+#write.csv( as.data.frame(res.wm16h_sig), "sig_genes/res.wm16h_sig.csv", row.names = TRUE)
+
+
+```
+
+
+# Merge sig DEs
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+
+
+sigDEs_list <- list()
+for (i in ls(pattern="res.*sig")) {
+  if (nrow(get(i)) > 0) {
+    df <- cbind.data.frame(lncRNA=rownames(get(i)), get(i), condition=i)
+    sigDEs_list[[i]] <- df
+  }
+}
+merged_sigDEs <- do.call(rbind, sigDEs_list)
+rownames(merged_sigDEs) <- NULL
+
+# Remove "res." and "_sig" from the names
+merged_sigDEs$condition <- gsub("res\\.|_sig", "", merged_sigDEs$condition )
+
+merged_sigDEs <- merged_sigDEs %>% 
+  mutate(condition = factor(condition, levels = c("cf2h", "ne2h", "sk2h", "wm2h",
+           "cf4h", "ne4h", "sk4h", "wm4h",
+           "cf8h", "ne8h", "sk8h", "wm8h",
+           "cf16h", "ne16h", "sk16h", "wm16h"))) %>% 
+  arrange(condition, desc(log2FoldChange))
+
+merged_sigDEs$regulation <- ifelse(merged_sigDEs$log2FoldChange > 0, "up", "down")
+
+write.csv(merged_sigDEs, "Merged_sigDEGs.csv", row.names = F)
+```
+
+####
+#GO analysis
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+GO_raw <- read.csv("GO/GO_table.csv")
+
+GO_raw$negative_log10_of_adjusted_p_value <- ifelse(GO_raw$regultation =="down",GO_raw$negative_log10_of_adjusted_p_value*-1, GO_raw$negative_log10_of_adjusted_p_value)
+GO_raw <- na.omit(GO_raw)
+
+## 2h: no value
+
+## 4h
+GO_4h <- subset(GO_raw, hpi == "4h")
+GO_4h_res <- subset(GO_4h, Line == "resistant")
+GO_4h_sus <- subset(GO_4h, Line == "susceptible")
+
+GO_plot_4h_res <- ggplot(GO_4h_res, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_4h_res$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), strip.text.x =
+            element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16)) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+#GO_plot_4h_res
+
+GO_plot_4h_sus <- ggplot(GO_4h_sus, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_4h_sus$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), 
+            strip.text.x =element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16),
+            legend.position = "none" ) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+GO_plot_4h_sus
+
+## 8h
+GO_8h <- subset(GO_raw, hpi == "8h")
+GO_8h_res <- subset(GO_8h, Line == "resistant")
+GO_8h_sus <- subset(GO_8h, Line == "susceptible")
+
+GO_plot_8h_res <- ggplot(GO_8h_res, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_8h_res$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), strip.text.x =
+            element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16),
+            legend.position = "none" ) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+GO_plot_8h_res
+
+GO_plot_8h_sus <- ggplot(GO_8h_sus, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_8h_sus$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), strip.text.x =
+            element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16)) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+#GO_plot_8h_sus
+
+
+
+## 16h
+GO_16h <- subset(GO_raw, hpi == "16h")
+GO_16h_res <- subset(GO_16h, Line == "resistant")
+GO_16h_sus <- subset(GO_16h, Line == "susceptible")
+
+GO_plot_16h_res <- ggplot(GO_16h_res, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_16h_res$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), strip.text.x =
+            element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16),
+            legend.position = "none" ) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+GO_plot_16h_res
+
+GO_plot_16h_sus <- ggplot(GO_16h_sus, aes(y=negative_log10_of_adjusted_p_value, 
+                              x=reorder(term_name, negative_log10_of_adjusted_p_value), fill= source, group=Line)) + 
+      geom_bar(position=position_dodge(), stat="identity", colour="grey50", size=0.5) +
+      facet_grid(source ~ ., scales="free_y", space="free", labeller = label_bquote("")) +
+      scale_y_continuous( limits=c(-10,10), breaks = c(-10,-5,0,5,10), labels=c(10,5,0,5,10)) +
+      scale_x_discrete("", labels=NULL) +
+      coord_flip()  +
+      labs(x= "", fill = "GO category", y=expression(
+        paste(bold("Down-regulated"),"         -log(adjusted ", italic("P"), "-value)         ", bold("Up-regulated")))) + 
+      theme_minimal() +
+      geom_text(aes(x=term_name, y=0, label=term_name), hjust=GO_16h_sus$hjust, size = 4) +
+      geom_text(aes(label=intersection_size), 
+            position = position_stack(vjust = 0.5), size=5, fontface="bold", col ="white") +
+      theme(axis.text.y=element_text(size=15),axis.text.x=element_text(size=10), axis.title=element_text(size=12), strip.text.x =
+            element_text(size=20), legend.text = element_text(size=12),legend.title = element_text(size=16)) +
+      theme(panel.grid.major = element_blank()) +
+      theme(panel.grid.minor = element_blank()) + 
+      geom_hline(yintercept = 0, col= "grey40")  + 
+      scale_fill_manual(values=c("brown1", "orange1","royalblue4","purple"),
+                        labels=c("BP", "CC", "KEGG", "MF")) + 
+  theme(axis.line.x = element_line(color="black", size = 0.5))
+ 
+
+#GO_plot_16h_sus
+
+#save individual plots
+
+
+pdf("plots/GO_plot_4h_sus.pdf", width = 6, height = 3.5)
+GO_plot_4h_sus
+dev.off()
+
+pdf("plots/GO_plot_8h_res.pdf", width = 6.1, height = 2.4)
+GO_plot_8h_res
+dev.off()
+
+pdf("plots/GO_plot_16h_res.pdf", width = 7.5, height = 5)
+GO_plot_16h_res
+dev.off()
+
+
+### Merge plots
+
+blank <-plot_spacer()+theme_minimal()
+
+p1 <- ggarrange(blank, blank, GO_plot_4h_sus, nrow = 3 , heights = c(1,1,1.7),common.legend = TRUE, legend = "none")
+p2 <- ggarrange(GO_plot_8h_res, blank, blank, nrow = 3, heights = c(3.4, 1.8, 0.6),common.legend = TRUE, legend = "none" )
+p3 <- ggarrange(GO_plot_16h_res, blank, blank, nrow = 3, heights = c(2.85, 1, 1), common.legend = TRUE, legend = "none")
+
+GO_legend <- g_legend(GO_plot_4h_sus + theme(legend.position='bottom'))
+
+GO_plots <- ggarrange (ggarrange( blank, p1, p2, p3,
+                       ncol = 4, widths = c(0.3,1.8,1.8,2.2)), GO_legend, nrow =2, heights = c(1,0.1))
+
+GO_plots
+
+
+pdf("plots/p1.pdf", width = 7, height = 5)
+p1
+dev.off()
+
+
+
+
+png(filename = "Plots/GO.png", width = 21, height = 7.5, units = "in",  res = 300 )
+GO_plots
+dev.off()
+      
+
+```
+
+
+# Genes for the QTL
+```{r}
+library(tidyverse)
+
+qtl <- read.csv("sig_genes/Rpsan1_region_genes_withDEGs.CSV")
+
+qtl2 <- qtl[,6:69]
+row.names(qtl2) <- qtl[,1]
+qtl_m <- t(qtl2)
+dim(qtl_m)
+#qtl_col <- cbind(coldata, qtl_m)
+
+qtl_m2 <- as.data.frame(qtl_m) %>% 
+  mutate(grp = 1+ (row_number()-1) %/% 2) %>% 
+  group_by(grp) %>% 
+  summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+  select(-grp)
+
+row.names(qtl_m2) <- coldata[seq(1, nrow(coldata), 2), 9]
+
+
+row.names(qtl_m2) <- c (1,5,2,6,3,7,4,8,9,13,10,14,11,15,12,16,17,21,18,22,19,23,20,24,25,29,26,30,27,31,28,32)
+qtl_m2 <- qtl_m2[order(as.numeric(row.names(qtl_m2))), ]
+row.names(qtl_m2) <- c("cf_2h_c", "cf_4h_c", "cf_8h_c", "cf_16h_c",
+                       "cf_2h_t", "cf_4h_t", "cf_8h_t", "cf_16h_t",
+                       "ne_2h_c", "ne_4h_c", "ne_8h_c", "ne_16h_c",
+                       "ne_2h_t", "ne_4h_t", "ne_8h_t", "ne_16h_t",
+                       "sk_2h_c", "sk_4h_c", "sk_8h_c", "sk_16h_c",
+                       "sk_2h_t", "sk_4h_t", "sk_8h_t", "sk_16h_t",
+                       "wm_2h_c", "wm_4h_c", "wm_8h_c", "wm_16h_c",
+                       "wm_2h_t", "wm_4h_t", "wm_8h_t", "wm_16h_t")
+
+
+
+qtl_m3 <- t(qtl_m2)
+
+qtl_m4 <- t(apply(qtl_m3, 1, function(x)(x-min(x))/(max(x)-min(x))))
+
+qtl_m5<- replace(qtl_m4, qtl_m4 == "NaN", 0)
+
+color.palette1  <- colorRampPalette(c("blue4", "white", "red2"))(n=100)
+
+qtl_heat <- pheatmap(qtl_m5, cluster_rows=TRUE, cluster_cols=FALSE, 
+                     legend_breaks = c(0,1),legend_labels = c("Row min", "Row max"), color = color.palette1)
+
+png(filename = "Plots/QTL_heatmap.png", width = 8, height = 8, units = "in",  res = 300 )
+qtl_heat
+dev.off()
+      
+
+```
+
+
+# plotting for each interesting gene
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+NormalizedCount0 <- read.csv("Normalized_countsGTF.csv")
+row.names(NormalizedCount0) <- NormalizedCount0$X
+NormalizedCount <- NormalizedCount0[,-1]
+
+NC <- t(as.data.frame(NormalizedCount))
+NC2 <- cbind(rownames(NC), data.frame(NC, row.names=NULL))
+
+colnames(NC2)[1] <- "ID" 
+
+NC_col <- merge( coldata, NC2, by = "ID")
+
+NC_col$Inoculation <- factor(NC_col$Inoculation, levels = c("control", "inoculated"))
+
+head(NC_col)[,1:15]
+
+
+## Bar plot
+### Glyma.03G162500
+Glyma.03G162500.sum <- summarySE(NC_col, measurevar="Glyma.03G162500", groupvars=c("Line","hpi","Inoculation"))
+Glyma.03G162500.sum2 <- Glyma.03G162500.sum 
+Glyma.03G162500.sum2$hpi <- factor(Glyma.03G162500.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.03G162500 <- ggplot(Glyma.03G162500.sum2  , aes(x=hpi, y=Glyma.03G162500, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G162500", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.03G162500-se, ymax=Glyma.03G162500+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.03G162500
+
+## Line plot
+### Glyma.03G162500
+
+Glyma.03G162500_ln <- ggplot(Glyma.03G162500.sum  , aes(x=hpi, y=Glyma.03G162500)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+    geom_errorbar(aes(ymin=Glyma.03G162500-se, ymax=Glyma.03G162500+se, color = Line), 
+                  width=.2) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G162500", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('lightblue', 'blue4', 'pink', 'red3'))
+
+Glyma.03G162500_ln 
+
+#################################################
+
+### Glyma.03G040900
+Glyma.03G040900.sum <- summarySE(NC_col, measurevar="Glyma.03G040900", groupvars=c("Line","hpi","Inoculation"))
+Glyma.03G040900.sum2 <- Glyma.03G040900.sum 
+Glyma.03G040900.sum2$hpi <- factor(Glyma.03G040900.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.03G040900 <- ggplot(Glyma.03G040900.sum2  , aes(x=hpi, y=Glyma.03G040900, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G040900", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.03G040900-se, ymax=Glyma.03G040900+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.03G040900
+
+## Line plot
+### Glyma.03G040900
+
+Glyma.03G040900_ln <- ggplot(Glyma.03G040900.sum  , aes(x=hpi, y=Glyma.03G040900)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G040900", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.03G040900_ln 
+
+
+png(filename = "Plots/Glyma.03G040900_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.03G040900_ln
+dev.off()
+      
+#################################################
+
+### Glyma.03G041000
+Glyma.03G041000.sum <- summarySE(NC_col, measurevar="Glyma.03G041000", groupvars=c("Line","hpi","Inoculation"))
+Glyma.03G041000.sum2 <- Glyma.03G041000.sum 
+Glyma.03G041000.sum2$hpi <- factor(Glyma.03G041000.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.03G041000 <- ggplot(Glyma.03G041000.sum2  , aes(x=hpi, y=Glyma.03G041000, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G041000", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.03G041000-se, ymax=Glyma.03G041000+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.03G041000
+
+## Line plot
+### Glyma.03G041000
+
+Glyma.03G041000_ln <- ggplot(Glyma.03G041000.sum  , aes(x=hpi, y=Glyma.03G041000)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G041000", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.03G041000_ln 
+
+
+png(filename = "Plots/Glyma.03G041000_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.03G041000_ln
+dev.off()
+      
+#######################
+
+
+### Glyma.03G048600 (RPP4?)
+
+Glyma.03G048600.sum <- summarySE(NC_col, measurevar="Glyma.03G048600", groupvars=c("Line","hpi","Inoculation"))
+Glyma.03G048600.sum2 <- Glyma.03G048600.sum 
+Glyma.03G048600.sum2$hpi <- factor(Glyma.03G048600.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.03G048600 <- ggplot(Glyma.03G048600.sum2  , aes(x=hpi, y=Glyma.03G048600, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G048600", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.03G048600-se, ymax=Glyma.03G048600+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.03G048600
+
+## Line plot
+### Glyma.03G048600
+
+Glyma.03G048600_ln <- ggplot(Glyma.03G048600.sum  , aes(x=hpi, y=Glyma.03G048600)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.03G048600", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.03G048600_ln 
+
+
+png(filename = "Plots/Glyma.03G048600_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.03G048600_ln
+dev.off()
+      
+      
+#######################
+
+
+### Glyma.18G226250 (RPP4?)
+
+Glyma.18G226250.sum <- summarySE(NC_col, measurevar="Glyma.18G226250", groupvars=c("Line","hpi","Inoculation"))
+Glyma.18G226250.sum2 <- Glyma.18G226250.sum 
+Glyma.18G226250.sum2$hpi <- factor(Glyma.18G226250.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.18G226250 <- ggplot(Glyma.18G226250.sum2  , aes(x=hpi, y=Glyma.18G226250, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226250", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.18G226250-se, ymax=Glyma.18G226250+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.18G226250
+
+## Line plot
+### Glyma.18G226250
+
+Glyma.18G226250_ln <- ggplot(Glyma.18G226250.sum  , aes(x=hpi, y=Glyma.18G226250)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226250", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.18G226250_ln 
+
+
+png(filename = "Plots/Glyma.18G226250_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.18G226250_ln
+dev.off()
+      
+
+      
+#######################
+
+
+### Glyma.18G226500 (RPP4?)
+
+Glyma.18G226500.sum <- summarySE(NC_col, measurevar="Glyma.18G226500", groupvars=c("Line","hpi","Inoculation"))
+Glyma.18G226500.sum2 <- Glyma.18G226500.sum 
+Glyma.18G226500.sum2$hpi <- factor(Glyma.18G226500.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.18G226500 <- ggplot(Glyma.18G226500.sum2  , aes(x=hpi, y=Glyma.18G226500, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226500", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.18G226500-se, ymax=Glyma.18G226500+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.18G226500
+
+## Line plot
+### Glyma.18G226500
+
+Glyma.18G226500_ln <- ggplot(Glyma.18G226500.sum  , aes(x=hpi, y=Glyma.18G226500)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226500", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.18G226500_ln 
+
+
+png(filename = "Plots/Glyma.18G226500_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.18G226500_ln
+dev.off()
+      
+
+#######################
+
+
+### Glyma.18G226850 (RPP4?)
+
+Glyma.18G226850.sum <- summarySE(NC_col, measurevar="Glyma.18G226850", groupvars=c("Line","hpi","Inoculation"))
+Glyma.18G226850.sum2 <- Glyma.18G226850.sum 
+Glyma.18G226850.sum2$hpi <- factor(Glyma.18G226850.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.18G226850 <- ggplot(Glyma.18G226850.sum2  , aes(x=hpi, y=Glyma.18G226850, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226850", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.18G226850-se, ymax=Glyma.18G226850+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.18G226850
+
+## Line plot
+### Glyma.18G226850
+
+Glyma.18G226850_ln <- ggplot(Glyma.18G226850.sum  , aes(x=hpi, y=Glyma.18G226850)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.18G226850", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.18G226850_ln 
+
+
+png(filename = "Plots/Glyma.18G226850_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.18G226850_ln
+dev.off()
+      
+      
+#######################
+
+
+
+### Glyma.16G135200 (TNR)
+
+Glyma.16G135200.sum <- summarySE(NC_col, measurevar="Glyma.16G135200", groupvars=c("Line","hpi","Inoculation"))
+Glyma.16G135200.sum2 <- Glyma.16G135200.sum 
+Glyma.16G135200.sum2$hpi <- factor(Glyma.16G135200.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.16G135200 <- ggplot(Glyma.16G135200.sum2  , aes(x=hpi, y=Glyma.16G135200, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.16G135200 (TNR)", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.16G135200-se, ymax=Glyma.16G135200+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.16G135200
+
+## Line plot
+### Glyma.16G135200
+
+Glyma.16G135200_ln <- ggplot(Glyma.16G135200.sum  , aes(x=hpi, y=Glyma.16G135200)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.16G135200 (TNR)", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.16G135200_ln 
+
+
+png(filename = "Plots/Glyma.16G135200_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.16G135200_ln
+dev.off()
+      
+
+
+#######################
+
+### Glyma.09G210600 (RPS3)
+
+Glyma.09G210600.sum <- summarySE(NC_col, measurevar="Glyma.09G210600", groupvars=c("Line","hpi","Inoculation"))
+Glyma.09G210600.sum2 <- Glyma.09G210600.sum 
+Glyma.09G210600.sum2$hpi <- factor(Glyma.09G210600.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.09G210600 <- ggplot(Glyma.09G210600.sum2  , aes(x=hpi, y=Glyma.09G210600, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="Transcript levels (normalized counts)", title="Glyma.09G210600", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.09G210600-se, ymax=Glyma.09G210600+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.09G210600
+
+## Line plot
+### Glyma.09G210600
+
+Glyma.09G210600_ln <- ggplot(Glyma.09G210600.sum  , aes(x=hpi, y=Glyma.09G210600)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels\n(normalized counts)", title="Glyma.09G210600 (RPS3)", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_blank() ) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.09G210600_ln 
+
+
+png(filename = "Plots/Glyma.09G210600_ln.png", width = 6, height = 3, units = "in",  res = 300 )
+Glyma.09G210600_ln
+dev.off()
+
+pdf("plots/Glyma.09G210600_ln.pdf", width = 4, height = 2.5)
+Glyma.09G210600_ln
+dev.off()
+
+# legend on bottom
+
+Glyma.09G210600_ln2 <- ggplot(Glyma.09G210600.sum, aes(x = hpi, y = Glyma.09G210600)) + 
+  theme_bw() +
+  geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+  geom_point(aes(color = Line), size = 2) +
+  labs(y = "Transcript levels\n(normalized counts)", title = "Glyma.09G210600 (RPS3)", x = "hpi") +
+  theme(
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    strip.text = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    legend.title = element_blank(),
+    legend.position = "bottom"
+  ) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(
+    values = c("dotted", "solid"),
+    guide = guide_legend(
+      title = "Inoculation",  # Legend title for the first line
+      label.position = "bottom",  # Position of the first line in the legend
+      override.aes = list(
+        linetype = c("dotted", "solid"),
+        color = "black"  # Color of the first line
+      )
+    )
+  ) +
+  scale_color_manual(
+    values = c('blue1', 'navy', 'tan1', 'darkorange3'),
+    guide = guide_legend(
+      title = "Line",  # Legend title for the second line
+      label.position = "bottom",  # Position of the second line in the legend
+      override.aes = list(
+        linetype = "solid",  # Use solid line for the second line
+        color = c("blue1", "navy", "tan1", "darkorange3")
+      )
+    )
+  )
+
+
+pdf("plots/Glyma.09G210600_ln2.pdf", width = 3.5, height = 3)
+Glyma.09G210600_ln2
+dev.off()
+
+
+
+Glyma.09G210600_ln3 <- ggplot(Glyma.09G210600.sum  , aes(x=hpi, y=Glyma.09G210600)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1.2) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="Transcript levels\n(normalized counts)", title="Glyma.09G210600 (RPS3)", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_blank(),
+          legend.position = "bottom") +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+
+pdf("plots/Glyma.09G210600_ln3.pdf", width = 3.5, height = 3)
+Glyma.09G210600_ln3
+dev.off()
+
+
+```
+
+
+
+################################################################################################################
+
+################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################################################
+
+################################################################################################################
+
+### TE analysis
+
+## Load data
+
+```{r,warning=FALSE, echo=FALSE}
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/TE_analysis/counts")
+
+filelist = list.files(pattern = "*.txt") # Make a file list from all count text files
+
+filelist <- mixedsort(filelist) # Sort the file name
+
+datafr = do.call(cbind,lapply(filelist,function(fn)read.table(fn,header=FALSE, sep="\t")[,2])) #merge all count files
+ID <- read.delim("cf_2hc2.TE.txt", head = FALSE)[,1] # for the first column
+ID2 <- as.character(ID)
+
+count0 = cbind(ID2, datafr) #merge with gene name
+countdata <- count0[,-1]
+rownames(countdata) <- count0[,1] 
+sample.names <- sub(".TE.txt", "", filelist) 
+
+colnames(countdata) <- sample.names # add column names
+mode(countdata)
+mode(countdata) = "numeric" #convert the class of a matrix from character to numeric
+class(countdata)
+
+head(countdata)[,c(1:6)]
+
+tail(countdata)[,c(1:6)]
+
+DF <- countdata[-c(52873:52877),] #check the tail and correct
+
+tail(DF)[,c(1:6)]
+
+
+
+#statsPerSample <- data.frame(t(apply(countdata, 2, summary)))
+#head(statsPerSample)
+
+# Define a function to draw a scatter plot for a pair of variables (samples) with density colors
+#plotFun <- function(x,y){ 
+#  dns <- densCols(x,y); 
+#  points(x,y, col=dns, pch=".", panel.first=grid());  
+#  abline(a=0, b=1, col="brown")
+#  }
+
+
+# Plot the scatter plot for a few pairs of variables selected at random
+#set.seed(123) # forces the random number generator to produce fixed results
+#pairs(log2(countdata[,sample(ncol(countdata),5)] + 1), 
+#      panel=plotFun, lower.panel = NULL)
+
+
+# Load the pre-made coldata to represent experimental designs
+coldata <- read.csv("coldata.csv", header = T)
+rownames(coldata) <- coldata$ID
+head(coldata)
+
+
+```
+
+
+##Make data frames with grouping and run the DESeq2
+```{r}
+#Make a data frame form a matrix
+dds <- DESeqDataSetFromMatrix(
+countData = DF,
+colData = coldata,
+design = ~ Line + Inoculation + hpi)
+
+#Grouping and run the DESeq2
+dds$group <- factor(paste0(dds$Line, dds$Inoculation, dds$hpi))
+design(dds) <- ~ group
+dds <- DESeq(dds)
+resultsNames(dds)
+
+#plotDispEsts(dds, main= "All samples") #Dispersion plot
+
+#ddsPra <- DESeq(dds ,fitLine = "parametric") #Test another option for fitLine as parametric
+#plotDispEsts(ddsPra, main= "All samples_parametric") #Dispersion plot for parametric
+#ddsmean <- DESeq(dds ,fitLine = "mean") #Test another option for fitLine as mean
+#plotDispEsts(ddsmean, main= "All samples_mean") #Dispersion plot for mean
+
+```
+
+
+#Size factor and library size
+```{r}
+
+dds.SF <- estimateSizeFactors(dds) #Check the size factors calculated by geometric mean
+print(sizeFactors(dds.SF))
+
+
+
+#Make dataframes
+df.SF <- as.data.frame(sizeFactors(dds.SF))
+df.colsum <- as.data.frame(colSums(counts(dds.SF)))
+df.SF.LS <- cbind(coldata,df.SF,df.colsum)
+
+#save library size
+#write.csv(colSums(counts(dds.SF)),  file = "../DESeq2/results/libarysize.csv")
+
+#Correlation between size factor and library size with tissue info
+cor.test(sizeFactors(dds.SF), colSums(counts(dds.SF)))
+
+#Make plots for size factor vs library
+
+plot(sizeFactors(dds.SF), colSums(counts(dds.SF)),
+     xlab = "Size factors",
+     ylab = "Library sizes",
+     pch=1, cex=1, col="black") #Correlation between size factor and library size
+abline(lm(df.colsum  ~ df.SF + 0), col="red")
+
+df.SF.LS$Inoculation <- factor(df.SF.LS$Inoculation , 
+                          levels = c( "control", "inoculated"))
+
+
+model.y <- lm(colSums(counts(dds.SF)) ~ sizeFactors(dds.SF), df.SF.LS)
+coef.y <- coef(model.y)
+ggplot(df.SF.LS, 
+       aes(x=sizeFactors(dds.SF), y=colSums(counts(dds.SF)), color=Line, shape=Inoculation)) +
+      geom_point(size=3) + 
+      xlab("Size factor (median of ratios)") +
+      ylab("Library size (total counts)") +
+      geom_abline(intercept=coef.y[1], slope=coef.y[2], size=1.1, color= "grey50")
+
+model.X <- lm(sizeFactors(dds.SF) ~ colSums(counts(dds.SF)), df.SF.LS)
+coef.X <- coef(model.X)
+
+##############################################################################################################################
+#Extract the normalized counts
+NormalizedCount <- counts(dds.SF, normalized = T)
+tail(NormalizedCount)
+#write.csv(NormalizedCount, file="../DESeq2/results/Normalized_countsGTF.csv", row.names = TRUE)
+
+## NCPK: NC/length of TE
+
+
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+
+#Cook's distance
+
+#png(filename = "plots/cooks_distance.png", width = 14, height = 6, units = "in",  res = 300 )
+#par(mfrow=c(1,1), mar = c(10, 3, 3, 1))
+boxplot(log10(assays(dds)[["cooks"]]), range=0, las=2, main="Cook's distances", col = dds$Line) 
+#dev.off()
+
+
+
+```
+
+
+
+
+## Check for distribution of counts before and after normalization in different ways
+```{r}
+
+# Histogram
+
+hist(as.matrix(log2(counts(dds, normalized=FALSE)+1)), col="grey15", border="white",
+     main="Log2-transformed counts per gene", xlab="log2(counts+1)", ylab="Number of genes", 
+     las=1, cex.axis=0.7, ylim=c(0,700000)) # before normalization
+hist(as.matrix(log2(counts(dds, normalized=TRUE)+1)), col="grey15", border="white",
+     main="Log2-transformed normalized counts per gene", xlab="log2(normalized counts+1)", ylab="Number of genes", 
+     las=1, cex.axis=0.7, ylim=c(0,700000)) # after normalization
+
+
+#Plot the log2-transformed counts before and after normalization
+group.col <- c("lightblue","orange")[coldata$Tissue]
+
+dev.off()
+
+png(filename = "plots/raw_normalized_counts.png", width = 11, height = 13, units = "in",  res = 300 )
+par(mfrow=c(1,2), mar = c(4.2, 10, 3, 1))
+boxplot(log2(counts(dds.SF, normalized=FALSE)+1),xlab="log2(counts+1)", main="Raw counts" , las = 1, horizontal = TRUE, pch = ",", col = group.col)
+boxplot(log2(counts(dds.SF, normalized=TRUE)+1), xlab="log2(normalized counts)", main="Normalized counts", las = 1, horizontal = TRUE, pch = ",", col = group.col)
+dev.off()
+
+
+
+
+```
+
+## Sample distance by Heatmap and PCA
+```{r}
+
+
+# Variance stabilizing transformation (can be also done with rlog, but it will take so long time)
+vsd <- vst(dds, blind = TRUE)
+
+#Log <- rlog(dds, blind = TRUE)
+
+
+#Calculate sample distance
+sampleDists <- dist( t( assay(vsd) ) )
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste(vsd$Line, vsd$Inoculation, vsd$hpi, vsd$rep, sep="-" )
+colnames(sampleDistMatrix) <- NULL
+
+colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+heatmap_VST <- heatmap.2( sampleDistMatrix, trace="none", col=colours, margins = c(5,10))
+
+heatmap.2( sampleDistMatrix, trace="none", col=colours, margins = c(5,10))
+
+
+#sampleDistsLog <- dist( t( assay(Log) ) )
+#sampleDistMatrixLog <- as.matrix( sampleDistsLog )
+#rownames(sampleDistMatrixLog) <- paste(Log$Individual, Log$Tissue, Log$Inoculation, sep="-" )
+#colnames(sampleDistMatrixLog) <- NULL
+#colours = colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+#heatmap.2( sampleDistMatrixLog, trace="none", col=colours, margins = c(5,10))
+
+#Test PCA
+plotPCA(vsd, intgroup=c("Inoculation", "hpi", "Line"))
+
+#Visualization of PCA (vst)
+
+pcaData <- plotPCA(vsd, intgroup=c("Line", "Inoculation", "hpi"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+pcaData$Line <- factor(pcaData$Line , 
+                          levels = c("cf", "ne", "sk", "wm"))
+
+pcaData$Inoculation <- factor(pcaData$Inoculation , 
+                          levels = c( "control", "inoculated"))
+
+pcaData$hpi <- factor(pcaData$hpi , 
+                          levels = c( "2", "4", "8", "16"))
+
+
+PCA <- ggplot(pcaData, aes(PC1, PC2, color= hpi, shape= Line, size = Inoculation) ) +
+  geom_point(alpha = 0.6) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+# coord_fixed() +
+  theme_bw() +
+  ggtitle("PCA of the samples (VST)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple", "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+PCA 
+
+png(filename = "plots/PCA_VST.png", width = 6, height = 5, units = "in",  res = 300 )
+PCA
+dev.off()
+
+
+textpca <- ggplot(pcaData, aes(PC1, PC2, color=hpi, shape=Line, size = Inoculation, label = rownames(coldata))) +
+   geom_text(check_overlap = FALSE, hjust = -0.1, nudge_y = 0.05) +
+  geom_point(size=3) +
+  xlab(paste0("PC1 (",percentVar[1],"%) ")) +
+  ylab(paste0("PC2 (",percentVar[2],"%) ")) + 
+#  coord_fixed() +
+  theme_bw() +
+  ggtitle("PCA of the samples with ID (VST)") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_shape_manual(values = c(15, 16, 0, 1)) +
+  scale_color_manual(values = c("blue1", "purple",  "red2", "orange" )) +
+  theme(plot.title = element_text(size = 14, face = "bold"),
+    legend.title=element_text(size=12), 
+    legend.text=element_text(size=12)) +
+    theme(panel.grid.major = element_blank()) +
+    theme(panel.grid.minor = element_blank())
+
+textpca
+
+png(filename = "plots/PCA_VST_wID.png", width = 13, height = 10, units = "in",  res = 300 )
+textpca
+dev.off()
+
+
+##
+```
+
+
+#Baisic DEG for TE
+```{r}
+
+#filtering
+ddsMF <- dds
+keep <- rowSums(counts(ddsMF, normalized=TRUE) >= 3 ) >= 2
+ddsMF <- ddsMF[keep,]
+
+ddsMF$Inoculation <- factor(ddsMF$Inoculation, levels=c("control","inoculated"))
+ 
+ddsMF$Line <- factor(ddsMF$Line, levels=c( "cf", "ne", "sk", "wm"))
+
+ddsMF$hpi <- factor(ddsMF$hpi, levels=c( "2", "4", "8", "16"))
+
+levels(ddsMF$hpi)
+levels(ddsMF$Line)
+
+# DESeq for all possible variable and interactions
+design(ddsMF) <- ~ hpi + Line + Inoculation + Line:Inoculation + hpi:Line + hpi:Inoculation + Line:hpi:Inoculation
+
+ddsMF <- DESeq(ddsMF)
+ddsMF
+resultsNames(ddsMF)
+
+resMF <- results(ddsMF)
+resMF
+resMF_Sig  = subset(resMF, padj<0.05)
+resMF_Sig
+
+
+# Subset for each Line and run DESeq
+
+coldata_1 = colData(ddsMF) 
+countdata_1  = assay(ddsMF) 
+
+```
+
+## DEG analysis for each sample
+
+```{r}
+
+#cf
+##all
+coldata_cf = coldata_1[coldata_1$Line %in% "cf",]
+
+countdata_cf = countdata_1[,coldata_1$Line %in% "cf" ]
+
+dds_cf = DESeqDataSetFromMatrix(countData = countdata_cf, colData = coldata_cf, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_cf  = DESeq(dds_cf)
+resultsNames(dds_cf)
+res_cf = results(dds_cf, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_cf2h = coldata_cf[coldata_cf$hpi %in% 2,]
+
+countdata_cf2h = countdata_cf[,coldata_cf$hpi %in% 2]
+
+dds_cf2h = DESeqDataSetFromMatrix(countData = countdata_cf2h, colData = coldata_cf2h, design = ~ Inoculation)
+
+dds_cf2h  = DESeq(dds_cf2h)
+resultsNames(dds_cf2h)
+res.cf2h = results(dds_cf2h)
+res.cf2h_sig  = subset(res.cf2h, padj<0.05)
+
+dim(res.cf2h_sig)
+write.csv( as.data.frame(res.cf2h_sig), "sig_genes/res.cf2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_cf4h = coldata_cf[coldata_cf$hpi %in% 4,]
+
+countdata_cf4h = countdata_cf[,coldata_cf$hpi %in% 4]
+
+dds_cf4h = DESeqDataSetFromMatrix(countData = countdata_cf4h, colData = coldata_cf4h, design = ~ Inoculation)
+
+dds_cf4h  = DESeq(dds_cf4h)
+resultsNames(dds_cf4h)
+res.cf4h = results(dds_cf4h)
+res.cf4h_sig  = subset(res.cf4h, padj<0.05)
+
+dim(res.cf4h_sig)
+write.csv( as.data.frame(res.cf4h_sig), "sig_genes/res.cf4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_cf8h = coldata_cf[coldata_cf$hpi %in% 8,]
+
+countdata_cf8h = countdata_cf[,coldata_cf$hpi %in% 8]
+
+dds_cf8h = DESeqDataSetFromMatrix(countData = countdata_cf8h, colData = coldata_cf8h, design = ~ Inoculation)
+
+dds_cf8h  = DESeq(dds_cf8h)
+resultsNames(dds_cf8h)
+res.cf8h = results(dds_cf8h)
+res.cf8h_sig  = subset(res.cf8h, padj<0.05)
+
+dim(res.cf8h_sig)
+write.csv( as.data.frame(res.cf8h_sig), "sig_genes/res.cf8h_sig.csv", row.names = TRUE)
+
+##16h
+coldata_cf16h = coldata_cf[coldata_cf$hpi %in% 16,]
+
+countdata_cf16h = countdata_cf[,coldata_cf$hpi %in% 16]
+
+dds_cf16h = DESeqDataSetFromMatrix(countData = countdata_cf16h, colData = coldata_cf16h, design = ~ Inoculation)
+
+dds_cf16h  = DESeq(dds_cf16h)
+resultsNames(dds_cf16h)
+res.cf16h = results(dds_cf16h)
+res.cf16h_sig  = subset(res.cf16h, padj<0.05)
+
+dim(res.cf16h_sig)
+write.csv( as.data.frame(res.cf16h_sig), "sig_genes/res.cf16h_sig.csv", row.names = TRUE)
+
+#ne
+
+##all
+coldata_ne = coldata_1[coldata_1$Line %in% "ne",]
+
+countdata_ne = countdata_1[,coldata_1$Line %in% "ne" ]
+
+dds_ne = DESeqDataSetFromMatrix(countData = countdata_ne, colData = coldata_ne, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_ne  = DESeq(dds_ne)
+resultsNames(dds_ne)
+res_ne = results(dds_ne, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_ne2h = coldata_ne[coldata_ne$hpi %in% 2,]
+
+countdata_ne2h = countdata_ne[,coldata_ne$hpi %in% 2]
+
+dds_ne2h = DESeqDataSetFromMatrix(countData = countdata_ne2h, colData = coldata_ne2h, design = ~ Inoculation)
+
+dds_ne2h  = DESeq(dds_ne2h)
+resultsNames(dds_ne2h)
+res.ne2h = results(dds_ne2h)
+res.ne2h_sig  = subset(res.ne2h, padj<0.05)
+
+dim(res.ne2h_sig)
+write.csv( as.data.frame(res.ne2h_sig), "sig_genes/res.ne2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_ne4h = coldata_ne[coldata_ne$hpi %in% 4,]
+
+countdata_ne4h = countdata_ne[,coldata_ne$hpi %in% 4]
+
+dds_ne4h = DESeqDataSetFromMatrix(countData = countdata_ne4h, colData = coldata_ne4h, design = ~ Inoculation)
+
+dds_ne4h  = DESeq(dds_ne4h)
+resultsNames(dds_ne4h)
+res.ne4h = results(dds_ne4h)
+res.ne4h_sig  = subset(res.ne4h, padj<0.05)
+
+dim(res.ne4h_sig)
+write.csv( as.data.frame(res.ne4h_sig), "sig_genes/res.ne4h_sig.csv", row.names = TRUE)
+
+##8h
+coldata_ne8h = coldata_ne[coldata_ne$hpi %in% 8,]
+
+countdata_ne8h = countdata_ne[,coldata_ne$hpi %in% 8]
+
+dds_ne8h = DESeqDataSetFromMatrix(countData = countdata_ne8h, colData = coldata_ne8h, design = ~ Inoculation)
+
+dds_ne8h  = DESeq(dds_ne8h)
+resultsNames(dds_ne8h)
+res.ne8h = results(dds_ne8h)
+res.ne8h_sig  = subset(res.ne8h, padj<0.05)
+
+dim(res.ne8h_sig)
+write.csv( as.data.frame(res.ne8h_sig), "sig_genes/res.ne8h_sig.csv", row.names = TRUE)
+
+
+##16h
+coldata_ne16h = coldata_ne[coldata_ne$hpi %in% 16,]
+
+countdata_ne16h = countdata_ne[,coldata_ne$hpi %in% 16]
+
+dds_ne16h = DESeqDataSetFromMatrix(countData = countdata_ne16h, colData = coldata_ne16h, design = ~ Inoculation)
+
+dds_ne16h  = DESeq(dds_ne16h)
+resultsNames(dds_ne16h)
+res.ne16h = results(dds_ne16h)
+res.ne16h_sig  = subset(res.ne16h, padj<0.05)
+
+dim(res.ne16h_sig)
+write.csv( as.data.frame(res.ne16h_sig), "sig_genes/res.ne16h_sig.csv", row.names = TRUE)
+
+
+#sk
+##all
+coldata_sk = coldata_1[coldata_1$Line %in% "sk",]
+
+countdata_sk = countdata_1[,coldata_1$Line %in% "sk" ]
+
+dds_sk = DESeqDataSetFromMatrix(countData = countdata_sk, colData = coldata_sk, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_sk  = DESeq(dds_sk)
+resultsNames(dds_sk)
+res_sk = results(dds_sk, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_sk2h = coldata_sk[coldata_sk$hpi %in% 2,]
+
+countdata_sk2h = countdata_sk[,coldata_sk$hpi %in% 2]
+
+dds_sk2h = DESeqDataSetFromMatrix(countData = countdata_sk2h, colData = coldata_sk2h, design = ~ Inoculation)
+
+dds_sk2h  = DESeq(dds_sk2h)
+resultsNames(dds_sk2h)
+res.sk2h = results(dds_sk2h)
+res.sk2h_sig  = subset(res.sk2h, padj<0.05)
+
+dim(res.sk2h_sig)
+write.csv( as.data.frame(res.sk2h_sig), "sig_genes/res.sk2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_sk4h = coldata_sk[coldata_sk$hpi %in% 4,]
+
+countdata_sk4h = countdata_sk[,coldata_sk$hpi %in% 4]
+
+dds_sk4h = DESeqDataSetFromMatrix(countData = countdata_sk4h, colData = coldata_sk4h, design = ~ Inoculation)
+
+dds_sk4h  = DESeq(dds_sk4h)
+resultsNames(dds_sk4h)
+res.sk4h = results(dds_sk4h)
+res.sk4h_sig  = subset(res.sk4h, padj<0.05)
+
+dim(res.sk4h_sig)
+write.csv( as.data.frame(res.sk4h_sig), "sig_genes/res.sk4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_sk8h = coldata_sk[coldata_sk$hpi %in% 8,]
+
+countdata_sk8h = countdata_sk[,coldata_sk$hpi %in% 8]
+
+dds_sk8h = DESeqDataSetFromMatrix(countData = countdata_sk8h, colData = coldata_sk8h, design = ~ Inoculation)
+
+dds_sk8h  = DESeq(dds_sk8h)
+resultsNames(dds_sk8h)
+res.sk8h = results(dds_sk8h)
+res.sk8h_sig  = subset(res.sk8h, padj<0.05)
+
+dim(res.sk8h_sig)
+write.csv( as.data.frame(res.sk8h_sig), "sig_genes/res.sk8h_sig.csv", row.names = TRUE)
+
+
+##16h
+coldata_sk16h = coldata_sk[coldata_sk$hpi %in% 16,]
+
+countdata_sk16h = countdata_sk[,coldata_sk$hpi %in% 16]
+
+dds_sk16h = DESeqDataSetFromMatrix(countData = countdata_sk16h, colData = coldata_sk16h, design = ~ Inoculation)
+
+dds_sk16h  = DESeq(dds_sk16h)
+resultsNames(dds_sk16h)
+res.sk16h = results(dds_sk16h)
+res.sk16h_sig  = subset(res.sk16h, padj<0.05)
+
+dim(res.sk16h_sig)
+write.csv( as.data.frame(res.sk16h_sig), "sig_genes/res.sk16h_sig.csv", row.names = TRUE)
+
+
+#wm
+
+##all
+coldata_wm = coldata_1[coldata_1$Line %in% "wm",]
+
+countdata_wm = countdata_1[,coldata_1$Line %in% "wm" ]
+
+dds_wm = DESeqDataSetFromMatrix(countData = countdata_wm, colData = coldata_wm, design = ~ hpi + Inoculation  + hpi:Inoculation)
+
+dds_wm  = DESeq(dds_wm)
+resultsNames(dds_wm)
+res_wm = results(dds_wm, name = "hpi4.Inoculationinoculated" ) #This can be also 8h, 16h compared 2h control
+
+##2h
+coldata_wm2h = coldata_wm[coldata_wm$hpi %in% 2,]
+
+countdata_wm2h = countdata_wm[,coldata_wm$hpi %in% 2]
+
+dds_wm2h = DESeqDataSetFromMatrix(countData = countdata_wm2h, colData = coldata_wm2h, design = ~ Inoculation)
+
+dds_wm2h  = DESeq(dds_wm2h)
+resultsNames(dds_wm2h)
+res.wm2h = results(dds_wm2h)
+res.wm2h_sig  = subset(res.wm2h, padj<0.05)
+
+dim(res.wm2h_sig)
+write.csv( as.data.frame(res.wm2h_sig), "sig_genes/res.wm2h_sig.csv", row.names = TRUE)
+
+##4h
+coldata_wm4h = coldata_wm[coldata_wm$hpi %in% 4,]
+
+countdata_wm4h = countdata_wm[,coldata_wm$hpi %in% 4]
+
+dds_wm4h = DESeqDataSetFromMatrix(countData = countdata_wm4h, colData = coldata_wm4h, design = ~ Inoculation)
+
+dds_wm4h  = DESeq(dds_wm4h)
+resultsNames(dds_wm4h)
+res.wm4h = results(dds_wm4h)
+res.wm4h_sig  = subset(res.wm4h, padj<0.05)
+
+dim(res.wm4h_sig)
+write.csv( as.data.frame(res.wm4h_sig), "sig_genes/res.wm4h_sig.csv", row.names = TRUE)
+
+
+##8h
+coldata_wm8h = coldata_wm[coldata_wm$hpi %in% 8,]
+
+countdata_wm8h = countdata_wm[,coldata_wm$hpi %in% 8]
+
+dds_wm8h = DESeqDataSetFromMatrix(countData = countdata_wm8h, colData = coldata_wm8h, design = ~ Inoculation)
+
+dds_wm8h  = DESeq(dds_wm8h)
+resultsNames(dds_wm8h)
+res.wm8h = results(dds_wm8h)
+res.wm8h_sig  = subset(res.wm8h, padj<0.05)
+
+dim(res.wm8h_sig)
+write.csv( as.data.frame(res.wm8h_sig), "sig_genes/res.wm8h_sig.csv", row.names = TRUE)
+
+
+
+##16h
+coldata_wm16h = coldata_wm[coldata_wm$hpi %in% 16,]
+
+countdata_wm16h = countdata_wm[,coldata_wm$hpi %in% 16]
+
+dds_wm16h = DESeqDataSetFromMatrix(countData = countdata_wm16h, colData = coldata_wm16h, design = ~ Inoculation)
+
+dds_wm16h  = DESeq(dds_wm16h)
+resultsNames(dds_wm16h)
+res.wm16h = results(dds_wm16h)
+res.wm16h_sig  = subset(res.wm16h, padj<0.05)
+
+dim(res.wm16h_sig)
+write.csv( as.data.frame(res.wm16h_sig), "sig_genes/res.wm16h_sig.csv", row.names = TRUE)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################################################################################
+###############################################################################################################
+
+
+```{r}
+
+
+#Interactions
+
+# Subset for each time point and run DESeq (but think about the control can be susceptible line as wm)
+
+## 2h
+
+con.shpi4wm <- results(ddsMF,name = "Inoculation_inoculated_vs_control"  )
+head(con.shpi4wm)
+summary(con.shpi4wm)
+
+
+
+## 4h
+
+## 8h
+
+## 16h
+
+
+res.shpi4cf <- results(ddsMF, name="hpi4.Inoculationinoculated" )
+head(res.shpi4cf)
+summary(res.shpi4cf)
+
+
+con.shpi4cf <- results(ddsMF,contrast=c(  "Inoculation", "","" ) )
+head(con.shpi4cf)
+summary(con.shpi4cf)
+
+
+png(filename = "Plots/SWvsIT_sig_genes.png", width = 7, height = 4, units = "in",  res = 300 )
+par(mar = c(4, 4, 0, 3))
+layout(matrix(c(1,1,2,3),2,2, byrow=TRUE),heights=c(0.6,3))
+plot.new()
+text(0.5,0.1,"SW and IT",cex=1.5,font=1)
+hist( resSWIT$pvalue, breaks=20, col="grey", main = "", xlab = "P-value" )
+plot(x=resSWIT$log2FoldChange, y=-log10(resSWIT$padj), xlab="log2(Fold-Change)", ylab="-log10(adjusted P-value)", col=ifelse(resSWIT$padj<0.05, "red", "black"), main="")
+dev.off()
+
+res.shpi4cf_Sig  = subset(res.shpi4cf, padj<0.05)
+dim(res.shpi4cf_Sig)
+
+#ix = which.min(resSWIT_Sig$padj) # most significant
+#barplot(assay(ddsMF)[ix,],las=2, main=rownames(ddsMF)[ ix  ]  )
+
+# write.csv( as.data.frame(resSWIT_Sig), "Significant_genes/SWvsIT_Sig.csv", row.names = TRUE)
+
+## SW vs R_43
+
+resSWR_43 <- results(ddsMF, name="LineR_43.InoculationPost" )
+resSWR_43_Sig  = subset(resSWR_43, pvalue<0.05 )
+dim(resSWR_43_Sig)
+# write.csv( as.data.frame(resSWR_43_Sig), "Significant_genes/SWvsR_43_Sig.csv", row.names = TRUE)
+
+png("Plots/SWvsR_43_sig_genes.png", width = 7, height = 4, units = "in",  res = 300)
+par(mar = c(4, 4, 0, 3))
+layout(matrix(c(1,1,2,3),2,2, byrow=TRUE),heights=c(0.6,3))
+plot.new()
+text(0.5,0.5," SW and R_43",cex=1.5,font=1)
+hist( resSWR_43$pvalue, breaks=20, col="grey", main = "", xlab = "P-value" )
+plot(x=resSWR_43$log2FoldChange, y=-log10(resSWR_43$pvalue), xlab="log2(Fold-Change)", ylab="-log10(P-value)", col=ifelse(resSWR_43$pvalue<=0.05, "red", "black"), main="")
+dev.off()
+
+
+
+resSWR_43_fdr  = subset(resSWR_43, padj<0.05 )
+dim(resSWR_43_fdr)
+# write.csv( as.data.frame(resSWR_43_fdr), "Significant_genes/SWvsR_43_fdr.csv", row.names = TRUE)
+
+
+## SW vs R_95
+
+resSWR_95 <- results(ddsMF, name="LineR_95.InoculationPost" )
+resSWR_95_Sig  = subset(resSWR_95, pvalue<0.05)
+dim(resSWR_95_Sig)
+# write.csv( as.data.frame(resSWR_95_Sig), "Significant_genes/SWvsR_95_Sig.csv", row.names = TRUE)
+
+png("Plots/SWvsR_95_sig_genes.png", width = 7, height = 4, units = "in",  res = 300)
+par(mar = c(4, 4, 0, 3))
+layout(matrix(c(1,1,2,3),2,2, byrow=TRUE),heights=c(0.6,3))
+plot.new()
+text(0.5,0.5," SW and R_95",cex=1.5,font=1)
+hist( resSWR_95$pvalue, breaks=20, col="grey", main = "", xlab = "P-value" )
+plot(x=resSWR_95$log2FoldChange, y=-log10(resSWR_95$pvalue), xlab="log2(Fold-Change)", ylab="-log10(P-value)", col=ifelse(resSWR_95$pvalue<=0.05, "red", "black"), main="")
+dev.off()
+
+
+resSWR_95_fdr  = subset(resSWR_95, padj<0.05 )
+dim(resSWR_95_fdr)
+# write.csv( as.data.frame(resSWR_95_fdr), "Significant_genes/SWvsR_95_fdr.csv", row.names = TRUE)
+
+```
+
+
+
+##Heatmap for all pathway genes
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/Pathway_genes")
+
+pathgenes <- read.csv("Soybean_pathway_genes_NC.csv")
+
+### make function
+
+pathway_heatmap <- function(pathways) {
+  color.palette1  <- colorRampPalette(c("blue4", "white", "red2"))(n=100)
+  rowname_path <-  c("cf_2h_c", "cf_4h_c", "cf_8h_c", "cf_16h_c",
+                       "cf_2h_t", "cf_4h_t", "cf_8h_t", "cf_16h_t",
+                       "ne_2h_c", "ne_4h_c", "ne_8h_c", "ne_16h_c",
+                       "ne_2h_t", "ne_4h_t", "ne_8h_t", "ne_16h_t",
+                       "sk_2h_c", "sk_4h_c", "sk_8h_c", "sk_16h_c",
+                       "sk_2h_t", "sk_4h_t", "sk_8h_t", "sk_16h_t",
+                       "wm_2h_c", "wm_4h_c", "wm_8h_c", "wm_16h_c",
+                       "wm_2h_t", "wm_4h_t", "wm_8h_t", "wm_16h_t")
+  path <- subset(pathgenes, pathway == pathways)[,16:79]
+  row.names(path) <- subset(pathgenes, pathway == pathways)[,4]
+  path_m <- t(path)
+  path_m2 <- as.data.frame(path_m) %>% 
+    mutate(grp = 1+ (row_number()-1) %/% 2) %>% 
+    group_by(grp) %>% 
+    summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+    select(-grp)
+  row.names(path_m2) <- c (1,5,2,6,3,7,4,8,9,13,10,14,11,15,12,16,17,21,18,22,19,23,20,24,25,29,26,30,27,31,28,32)
+  path_m2 <- path_m2[order(as.numeric(row.names(path_m2))), ]
+  row.names(path_m2) <- rowname_path
+  path_m3 <- t(path_m2)
+  path_m4 <- t(apply(path_m3, 1, function(x)(x-min(x))/(max(x)-min(x))))
+  path_m5 <- replace(path_m4, path_m4 == "NaN", 0)
+  heatmap <- pheatmap(path_m5, cluster_rows=TRUE, cluster_cols=FALSE, main = pathways,
+                      fontsize = 11, fontsize_row = 8, fontsize_col = 10, fontsize_number = 8,
+                     legend_breaks = c(0,1),legend_labels = c("Min", "Max"), color = color.palette1)
+  return(heatmap)
+}
+
+#SA
+SA_P <- pathway_heatmap("SA")
+png(filename = "plot/SA_heatmap.png", width = 7.5, height = 3.6, units = "in",  res = 300 )
+SA_P
+dev.off()
+
+#JA
+JA_P <- pathway_heatmap("JA")
+png(filename = "plot/JA_heatmap.png", width = 7.5, height = 6.8, units = "in",  res = 300 )
+JA_P
+dev.off()
+
+#ET
+ET_P <- pathway_heatmap("ET")
+png(filename = "plot/ET_heatmap.png", width = 7.5, height = 8.6, units = "in",  res = 300 )
+ET_P
+dev.off()
+
+#BR
+BR_P <- pathway_heatmap("BR")
+png(filename = "plot/BR_heatmap.png", width = 7.5, height = 4, units = "in",  res = 300 )
+BR_P
+dev.off()
+
+#PTI_ETI
+PTI_ETI_P <- pathway_heatmap("PTI_ETI")
+png(filename = "plot/PTI_ETI_heatmap.png", width = 7.5, height = 3.2, units = "in",  res = 300 )
+PTI_ETI_P
+dev.off()
+
+#Ca
+Ca_P <- pathway_heatmap("Ca")
+png(filename = "plot/Ca_heatmap.png", width = 7.5, height = 4.5, units = "in",  res = 300 )
+Ca_P
+dev.off()
+
+#MAPK
+MAPK_P <- pathway_heatmap("MAPK")
+png(filename = "plot/MAPK_heatmap.png", width = 7.5, height = 3, units = "in",  res = 300 )
+MAPK_P
+dev.off()
+
+#Phytoalexin
+Phytoalexin_P <- pathway_heatmap("Phytoalexin")
+png(filename = "plot/Phytoalexin_heatmap.png", width = 7.5, height = 8.5, units = "in",  res = 300 )
+Phytoalexin_P
+dev.off()
+
+
+
+```
+
+
+
+
+##Heatmap for selected pathway genes
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/Pathway_genes")
+
+pathgenes_sel <- read.csv("Soybean_pathway_genes_NC_selected.csv")
+
+### make function
+
+pathway_heatmap <- function(pathways) {
+  color.palette1  <- colorRampPalette(c("darkblue","seagreen3", "red"))(n=100)
+  rowname_path <-  c("cf_2h_c", "cf_4h_c", "cf_8h_c", "cf_16h_c",
+                     "cf_2h_t", "cf_4h_t", "cf_8h_t", "cf_16h_t",
+                     "ne_2h_c", "ne_4h_c", "ne_8h_c", "ne_16h_c",
+                     "ne_2h_t", "ne_4h_t", "ne_8h_t", "ne_16h_t",
+                     "sk_2h_c", "sk_4h_c", "sk_8h_c", "sk_16h_c",
+                     "sk_2h_t", "sk_4h_t", "sk_8h_t", "sk_16h_t",
+                     "wm_2h_c", "wm_4h_c", "wm_8h_c", "wm_16h_c",
+                     "wm_2h_t", "wm_4h_t", "wm_8h_t", "wm_16h_t")
+  path <- subset(pathgenes_sel, pathway == pathways)[,16:79]
+  row.names(path) <- subset(pathgenes_sel, pathway == pathways)[,4]
+  path_m <- t(path)
+  path_m2 <- as.data.frame(path_m) %>% 
+    mutate(grp = 1+ (row_number()-1) %/% 2) %>% 
+    group_by(grp) %>% 
+    summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+    select(-grp)
+  row.names(path_m2) <- c (1,5,2,6,3,7,4,8,9,13,10,14,11,15,12,16,17,21,18,22,19,23,20,24,25,29,26,30,27,31,28,32)
+  path_m2 <- path_m2[order(as.numeric(row.names(path_m2))), ]
+  row.names(path_m2) <- rowname_path
+  path_m3 <- t(path_m2)
+  path_m4 <- t(apply(path_m3, 1, function(x)(x-min(x))/(max(x)-min(x))))
+  path_m5 <- replace(path_m4, path_m4 == "NaN", 0)
+  heatmap <- pheatmap(path_m5, cluster_rows=TRUE, cluster_cols=FALSE, main = pathways,
+                      fontsize = 11, fontsize_row = 8, fontsize_col = 10, fontsize_number = 8,
+                      legend_breaks = c(0,1),legend_labels = c("Min", "Max"),
+                      color = color.palette1, show_colnames = FALSE, 
+                      border = F ) 
+  return(heatmap)
+}
+
+
+#ET
+ET_P <- pathway_heatmap("ET")
+png(filename = "plot/new_selected_individual/ET_heatmap.png", width = 7.1, height = 18.5/8, units = "in",  res = 300 )
+ET_P
+dev.off()
+
+#SA
+SA_P <- pathway_heatmap("SA")
+png(filename = "plot/new_selected_individual/SA_heatmap.png", width = 7.1, height = 12.5/8, units = "in",  res = 300 )
+SA_P
+dev.off()
+
+#JA
+JA_P <- pathway_heatmap("JA")
+png(filename = "plot/new_selected_individual/JA_heatmap.png", width = 7.1, height = 23/8, units = "in",  res = 300 )
+JA_P
+dev.off()
+
+#MAPK
+MAPK_P <- pathway_heatmap("MAPK")
+png(filename = "plot/new_selected_individual/MAPK_heatmap.png", width = 7.1, height = 9/8, units = "in",  res = 300 )
+MAPK_P
+dev.off()
+
+#Phytoalexin
+Phytoalexin_P <- pathway_heatmap("Phytoalexin")
+png(filename = "plot/new_selected_individual/Phytoalexin_heatmap.png", width = 7.1, height = 16.5/8, units = "in",  res = 300 )
+Phytoalexin_P
+dev.off()
+
+pdf("plot/ET_selected.pdf", width = 7.1, height = 18.5/8)
+ET_P
+dev.off()
+
+pdf("plot/SA_selected.pdf", width = 7.1, height = 12.5/8)
+SA_P
+dev.off()
+
+pdf("plot/JA_selected.pdf", width = 7.1, height = 23/8)
+JA_P
+dev.off()
+
+pdf("plot/MAPK_selected.pdf", width = 7.1, height = 9/8)
+MAPK_P
+dev.off()
+
+pdf("plot/Phytoalexin_selected.pdf", width = 7.1, height = 16.5/8)
+Phytoalexin_P
+dev.off()
+
+```
+
+
+##Heatmap log2FC for selected pathway genes
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/Pathway_genes")
+
+pathgenes_log <- read.csv("Soybean_pathway_genes_NC_selected_logFC_updatedforplot.csv")
+dim(pathgenes_log)
+
+
+# Specify the desired order for the columns
+column_order <- c("cf_2h", "cf_4h", "cf_8h", "cf_16h",
+                   "ne_2h", "ne_4h", "ne_8h", "ne_16h",
+                   "sk_2h", "sk_4h", "sk_8h", "sk_16h",
+                   "wm_2h", "wm_4h", "wm_8h", "wm_16h")
+
+# Reorder the columns of the original data
+pathgenes_log_reordered <- pathgenes_log[, c("pathway", "ID_name", column_order)]
+
+# Create a matrix excluding pathway and ID_name columns
+heatmap_data_matrix <- as.matrix(pathgenes_log_reordered[, -c(1:2)])
+
+# Set row names to ID_name values
+rownames(heatmap_data_matrix) <- pathgenes_log_reordered$ID_name
+
+# Create a heatmap
+heatmap(
+  heatmap_data_matrix,
+  Colv = NA,  # Disable column clustering
+  Rowv = NA,  # Disable row clustering
+  col = colorRampPalette(c("blue", "skyblue1", "white", "red"))(100),  # Define color palette
+  main = "",
+  xlab = "",
+  ylab = ""
+)
+
+
+
+
+
+```
+
+
+##Heatmap for JAZ genes
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/Pathway_genes")
+
+pathgenes_sel <- read.csv("Soybean_pathway_genes_JAZ.csv")
+
+### make function
+
+pathway_heatmap <- function(pathways) {
+  color.palette1  <- colorRampPalette(c("darkblue","seagreen3", "red"))(n=100)
+  rowname_path <-  c("cf_2h_c", "cf_4h_c", "cf_8h_c", "cf_16h_c",
+                     "cf_2h_t", "cf_4h_t", "cf_8h_t", "cf_16h_t",
+                     "ne_2h_c", "ne_4h_c", "ne_8h_c", "ne_16h_c",
+                     "ne_2h_t", "ne_4h_t", "ne_8h_t", "ne_16h_t",
+                     "sk_2h_c", "sk_4h_c", "sk_8h_c", "sk_16h_c",
+                     "sk_2h_t", "sk_4h_t", "sk_8h_t", "sk_16h_t",
+                     "wm_2h_c", "wm_4h_c", "wm_8h_c", "wm_16h_c",
+                     "wm_2h_t", "wm_4h_t", "wm_8h_t", "wm_16h_t")
+  path <- subset(pathgenes_sel, pathway == pathways)[,16:79]
+  row.names(path) <- subset(pathgenes_sel, pathway == pathways)[,4]
+  path_m <- t(path)
+  path_m2 <- as.data.frame(path_m) %>% 
+    mutate(grp = 1+ (row_number()-1) %/% 2) %>% 
+    group_by(grp) %>% 
+    summarise(across(everything(), mean, na.rm = TRUE)) %>% 
+    select(-grp)
+  row.names(path_m2) <- c (1,5,2,6,3,7,4,8,9,13,10,14,11,15,12,16,17,21,18,22,19,23,20,24,25,29,26,30,27,31,28,32)
+  path_m2 <- path_m2[order(as.numeric(row.names(path_m2))), ]
+  row.names(path_m2) <- rowname_path
+  path_m3 <- t(path_m2)
+  path_m4 <- t(apply(path_m3, 1, function(x)(x-min(x))/(max(x)-min(x))))
+  path_m5 <- replace(path_m4, path_m4 == "NaN", 0)
+  heatmap <- pheatmap(path_m5, cluster_rows=TRUE, cluster_cols=FALSE, main = pathways,
+                      fontsize = 11, fontsize_row = 8, fontsize_col = 10, fontsize_number = 8,
+                      legend_breaks = c(0,1),legend_labels = c("Min", "Max"),
+                      color = color.palette1, show_colnames = FALSE, 
+                      border = F ) 
+  return(heatmap)
+}
+
+
+
+
+#JA
+JA_P <- pathway_heatmap("JA")
+png(filename = "plot/new_selected_individual/onlyJAZ_heatmap.png", width = 7.1, height = 23/8, units = "in",  res = 300 )
+JA_P
+dev.off()
+
+```
+
+# Plot number of DEGs
+```{r}
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/DESeq2/results")
+
+# create a data frame with your table data
+DEG <- data.frame(
+  Line = c("Colfax", "Colfax", "Colfax", "Colfax", "NE2701", "NE2701", "NE2701", "NE2701", "Senaki", "Senaki", "Senaki", "Senaki", "Williams82", "Williams82", "Williams82", "Williams82"),
+  hpi = c(2, 4, 8, 16, 2, 4, 8, 16, 2, 4, 8, 16, 2, 4, 8, 16),
+  No_Up = c(21, 10, 1764, 3263, 1309, 34, 776, 492, 21, 131, 820, 97, 11, 147, 246, 199),
+  No_Down = c(2, 8, 1230, 1880, 1100, 4, 111, 149, 3, 26, 77, 52, 0, 84, 106, 66)
+)
+
+DEG$hpi <- as.factor(DEG$hpi)
+
+# create the plot
+DE_p <- 
+ ggplot(DEG, aes(x = hpi, fill = "No_Up")) +
+  geom_col(aes(y = No_Up), position = position_dodge2()) +
+  geom_text(aes(label = No_Up, y = No_Up), vjust = -0.5, position = position_dodge2(width = 0.9)) +
+  geom_col(aes(y = -No_Down, fill = "No_Down"), position = position_dodge2()) +
+  geom_text(aes(label = No_Down, y = -No_Down), vjust = 1.5, position = position_dodge2(width = 0.9)) +
+  facet_wrap( ~ Line, nrow = 1, strip.position = "bottom") +
+  scale_y_continuous(expand = c(0, 0), limits = c(-10, 30)) +
+  labs(title = "", x = "", y = "Number of DEGs") +
+  theme_classic() +
+  geom_hline(yintercept = 0, col = "grey40")  + 
+  scale_y_continuous(limits = c(-2000, 3300), breaks = c(-2000, -1000, 0, 1000, 2000, 3000), 
+                     labels = c(2000, 1000, 0, 1000, 2000, 3000)) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 24),
+    strip.placement = "outside",
+    axis.text.x = element_text(margin = margin(t = 10), size = 22),
+    axis.text.x.bottom = element_text(margin = margin(t = 2, b = 2)),
+    axis.text.y = element_text(size = 14),
+    axis.title = element_text(size = 22),
+    legend.text = element_text(size = 22),
+    legend.position = c(0.91, 0.91)
+  ) +
+  scale_fill_manual(
+    name = "",
+    values = c("No_Down" = "orange", "No_Up" = "purple3"),
+    labels = c("Down", "Up"),
+    guide = guide_legend(
+      reverse = TRUE,
+      label.position = "right",
+      label.hjust = 0,
+      title.hjust = 0,
+      title.vjust = 1,
+      title.theme = element_text(hjust = 0)
+    )
+  )
+
+
+
+png(filename = "plots/Number_DEGs.png", width = 11, height = 4.7, units = "in",  res = 500 )
+DE_p
+dev.off()
+
+pdf("plots/Number_DEGs.pdf", width = 11, height = 4.7)
+DE_p
+dev.off()
+
+
+
+
+
+
+
+
+
+```
+
+
+
+

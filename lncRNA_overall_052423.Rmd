@@ -1,0 +1,1491 @@
+---
+title: "lncRNA analysis"
+author: "Gwonjin Lee"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+# Load files and Libraries
+```{r}
+
+library(ggplot2)
+library(ggpubr)
+library(Rmisc)
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/lnc/results")
+
+NC_gene <- as.matrix(read.csv("../../DEG_analysis/DESeq2/results/Normalized_countsGTF.csv", row.names = 1))
+
+
+#NC_DETElinc <- as.matrix(read.csv("TEcontain/DE_onlyTEcontain_nc.csv", row.names = 1)) #padj
+#NC_DEnoTElinc <- as.matrix(read.csv("NonTE/DE_noTElinc_ncMatrix.csv", row.names = 1)) #padj
+
+NC_DEG <- as.matrix(read.csv("../../DEG_analysis/DESeq2/results/NC_DEGs.csv", row.names = 1))
+NC_DElinc_pval <- as.matrix(read.csv("common_sigDE_linc_pval_NC.csv", row.names = 1))
+#NC_DETEcontainlinc_pval <- as.matrix(read.csv("TEcontain/pval0.01/sigDE_TEcontainlinc_TEsimil_removed_pval_NC.csv", row.names = 1))
+
+coldata <- read.csv("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/DEG_analysis/counts/coldata.csv")
+
+```
+
+
+
+# Trans-targets: Correlation between DE noTE lincRNAs and DEGs
+```{r}
+
+# initialize empty lists to store results
+DEG <- numeric()
+DElnc <- numeric()
+r_vals <- numeric()
+p_vals <- numeric()
+
+# loop through all DEG pairs and calculate correlation coefficients
+for (i in 1:nrow(NC_DEG)) {
+  for (j in 1:nrow(NC_DEnoTElinc)) {
+    x <- NC_DEG[i,]
+    y <- NC_DEnoTElinc[j,]
+    if (sd(x) == 0 | sd(y) == 0) {
+      next  # skip this pair of DEGs
+    }
+    cor_test <- cor.test(x, y)
+    if (cor_test$estimate > 0.9 & cor_test$p.value < 0.05) {
+      DEG <- c(DEG, rownames(NC_DEG)[i])
+      DElnc <- c(DElnc, rownames(NC_DEnoTElinc)[j])
+      r_vals <- c(r_vals, cor_test$estimate)
+      p_vals <- c(p_vals, cor_test$p.value)
+    }
+  }
+}
+
+# create a data frame of the results
+Cor_results <- data.frame(DElnc = DElnc, DEG = DEG, r_value = r_vals, p_value = p_vals)
+
+write.csv(Cor_results, file = "NonTE/Cor_DEnoTElinc_DEGs.csv" , row.names = F )
+
+## No TE
+
+# initialize empty lists to store resultsf
+DEG <- numeric()
+DElnc <- numeric()
+r_vals <- numeric()
+p_vals <- numeric()
+
+# loop through all DEG pairs and calculate correlation coefficients
+for (i in 1:nrow(NC_DEG)) {
+  for (j in 1:nrow(NC_DEnoTElinc)) {
+    x <- NC_DEG[i,]
+    y <- NC_DEnoTElinc[j,]
+    if (sd(x) == 0 | sd(y) == 0) {
+      next  # skip this pair of DEGs
+    }
+    cor_test <- cor.test(x, y)
+    if (abs(cor_test$estimate) > 0.9 & cor_test$p.value < 0.05) {
+      DEG <- c(DEG, rownames(NC_DEG)[i])
+      DElnc <- c(DElnc, rownames(NC_DEnoTElinc)[j])
+      r_vals <- c(r_vals, cor_test$estimate)
+      p_vals <- c(p_vals, cor_test$p.value)
+    }
+  }
+}
+
+# create a data frame of the results
+Cor_results <- data.frame(DElnc = DElnc, DEG = DEG, r_value = r_vals, p_value = p_vals)
+
+```
+
+
+
+
+
+# Trans-targets: Correlation between common DE noTE lincRNAs (p value < 0.01) and DEGs
+```{r}
+
+# initialize empty lists to store results
+DEG <- numeric()
+DElnc <- numeric()
+r_vals <- numeric()
+p_vals <- numeric()
+
+# loop through all DEG pairs and calculate correlation coefficients
+for (i in 1:nrow(NC_DEG)) {
+  for (j in 1:nrow(NC_DEnoTElinc_pval)) {
+    x <- NC_DEG[i,]
+    y <- NC_DEnoTElinc_pval[j,]
+    if (sd(x) == 0 | sd(y) == 0) {
+      next  # skip this pair of DEGs
+    }
+    cor_test <- cor.test(x, y)
+    if (cor_test$estimate > 0.85 & cor_test$p.value < 0.05) {
+      DEG <- c(DEG, rownames(NC_DEG)[i])
+      DElnc <- c(DElnc, rownames(NC_DEnoTElinc_pval)[j])
+      r_vals <- c(r_vals, cor_test$estimate)
+      p_vals <- c(p_vals, cor_test$p.value)
+    }
+  }
+}
+
+# create a data frame of the results
+Cor_results_pval <- data.frame(DElnc = DElnc, DEG = DEG, r_value = r_vals, p_value = p_vals)
+
+write.csv(Cor_results_pval, file = "NonTE/pval0.01/Cor_commonDEnoTElinc_pval_DEGs.csv" , row.names = F )
+
+## No TE
+
+
+
+```
+
+
+# Trans-targets: Correlation between DE TE-containing lincRNAs and DEGs 
+```{r}
+
+# initialize empty lists to store results
+DEG <- numeric()
+DElnc_TEc <- numeric()
+r_vals_TE <- numeric()
+p_vals_TE <- numeric()
+
+# loop through all DEG pairs and calculate correlation coefficients
+for (i in 1:nrow(NC_DEG)) {
+  for (j in 1:nrow(NC_DETEcontainlinc_pval)) {
+    x <- NC_DEG[i,]
+    y <- NC_DETEcontainlinc_pval[j,]
+    if (sd(x) == 0 | sd(y) == 0) {
+      next  # skip this pair of DEGs
+    }
+    cor_test <- cor.test(x, y)
+    if (abs(cor_test$estimate) > 0.85  & cor_test$p.value < 0.05) {
+      DEG <- c(DEG, rownames(NC_DEG)[i])
+      DElnc_TEc <- c(DElnc_TEc, rownames(NC_DETEcontainlinc_pval)[j])
+      r_vals_TE <- c(r_vals_TE, cor_test$estimate)
+      p_vals_TE <- c(p_vals_TE, cor_test$p.value)
+    }
+  }
+}
+
+# create a data frame of the results
+Cor_TE_results <- data.frame(DElnc_TEcontain = DElnc_TEc, DEG = DEG, r_value = r_vals_TE, p_value = p_vals_TE)
+
+write.csv(Cor_TE_results, file = "TEcontain/pval0.01/Cor_DETEcontainlinc_DEGs.csv" , row.names = F )
+
+```
+
+
+
+
+# Cis-targets: check Correlation between individual lncRNAs and genes
+```{r}
+#NO TE lincRNA
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_013220, as.data.frame(t(NC_DEG))$Glyma.03G040900, method = "pearson" ) #LURP
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_013220, as.data.frame(t(NC_DEG))$Glyma.03G041000, method = "pearson" ) #LURP
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_071556, as.data.frame(t(NC_DEG))$Glyma.15G171000, method = "pearson" ) 
+
+# test plot
+plot(log(as.data.frame(t(NC_DElinc_pval))$XLOC_013220+1), log(as.data.frame(t(NC_DEG))$Glyma.03G040900+1))
+#Don't use because it has too many 0
+
+
+
+#calmodulin-binding
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_079870, as.data.frame(t(NC_DEG))$Glyma.17G055600, method = "pearson" ) #excluded
+
+
+
+#TE-containing lincRNA
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_059371, as.data.frame(t(NC_gene))$Glyma.13G038300, method = "pearson" )
+cor.test(as.data.frame(t(NC_DElinc_pval))$XLOC_059371, as.data.frame(t(NC_gene))$Glyma.13G038600, method = "pearson" )
+
+
+
+
+```
+
+
+
+# Plot for number of DEGs
+```{r}
+
+setwd("C:/Users/Gwonjin Lee/OneDrive - University of Florida/Project/Soybean/lnc/results")
+
+lncDEG <- read.csv("No.sigDE_lincall_pval0.01.csv")
+
+lncDEG$hpi <- factor(lncDEG$hpi, levels = c("2h", "4h", "8h", "16h"))
+
+# create the plot
+DElnc_p <- ggplot(lncDEG, aes(x = hpi, y = No_Up, fill = set)) +
+  geom_col(position = "stack") +
+  geom_col(aes(y = -No_Down, fill = set), position = "stack") +
+  facet_wrap( ~ Line, nrow = 1, strip.position = "bottom") +
+  scale_y_continuous(limits = c(-33, 163), 
+                     breaks = c(-25, 0, 25,50,75,100,125,150),
+                     labels = c(25, 0, 25,50,75,100,125,150)) +
+  labs(title = "", x = "", y = "Number of DE lncRNAs") +
+  theme_classic() +
+  geom_hline(yintercept = 0, col= "black")  + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 11), 
+        strip.placement = "outside",
+        axis.text.x = element_text(size = 9, margin = margin(t = 10)),
+        axis.text.x.bottom = element_text(margin = margin(t = 1, b = 1)),
+        axis.text.y = element_text(size = 9),
+        axis.title = element_text(size = 11), 
+        legend.title = element_blank(),
+        legend.text = element_text(size = 9.5), 
+        legend.position = "bottom",
+        legend.margin = margin(t = -10)) +
+      scale_fill_manual(values=c("purple2", "orange1"),
+                      breaks=c("Non-TE lincRNA", "TE-derived lincRNA"))
+
+DElnc_p
+
+
+
+
+
+# just for plot with numbers
+ggplot(lncDEG, aes(x = hpi, y = No_Up, fill = set)) +
+  geom_col(position = "stack") +
+  geom_col(aes(y = -No_Down, fill = set), position = "stack") +
+  geom_text(data = subset(lncDEG, No_Up > 0), aes(label = No_Up),
+            position = position_stack(vjust = 0.5), color = "black") +
+  geom_text(data = subset(lncDEG, No_Down > 0), aes(label = No_Down),
+            position = position_stack(vjust = -0.3), color = "black") +
+  facet_wrap(~ Line, nrow = 1, strip.position = "bottom") +
+  scale_y_continuous(limits = c(-33, 179), 
+                     breaks = c(-25, 0, 25,50,75,100,125,150,175),
+                     labels = c(25, 0, 25,50,75,100,125,150,175)) +
+  labs(title = "", x = "", y = "Number of DE lncRNAs") +
+  theme_classic() +
+  geom_hline(yintercept = 0, col = "black") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 11), 
+        strip.placement = "outside",
+        axis.text.x = element_text(size = 9, margin = margin(t = 10)),
+        axis.text.x.bottom = element_text(margin = margin(t = 1, b = 1)),
+        axis.text.y = element_text(size = 9),
+        axis.title = element_text(size = 11), 
+        legend.title = element_blank(),
+        legend.text = element_text(size = 9.5), 
+        legend.position = "bottom",
+        legend.margin = margin(t = -10)) +
+  scale_fill_manual(values = c("purple2", "orange1"),
+                    breaks = c("Non-TE lincRNA", "TE-derived lincRNA"))
+
+
+
+
+pdf("plots/DElnc_all_pval.pdf", width = 4, height = 3.5)
+DElnc_p
+dev.off()
+
+
+png(filename = "plots/DElnc_all_pval.png", width = 4, height = 3.5, units = "in",  res = 500 )
+DElnc_p
+dev.off()
+
+
+```
+
+
+
+#Plot for interesting lincRNAs
+```{r}
+
+
+NormalizedCount_linc <- as.data.frame(NC_DElinc_pval)
+
+NC_linc <- t(as.data.frame(NormalizedCount_linc))
+NC_linc2 <- cbind(rownames(NC_linc), data.frame(NC_linc, row.names=NULL))
+
+colnames(NC_linc2)[1] <- "ID" 
+
+NC_linc_col <- merge( coldata, NC_linc2, by = "ID")
+
+NC_linc_col$Inoculation <- factor(NC_linc_col$Inoculation, levels = c("control", "inoculated"))
+
+head(NC_linc_col)[,1:13]
+
+
+## Bar plot
+### XLOC_013220
+XLOC_013220.sum <- summarySE(NC_linc_col, measurevar="XLOC_013220", groupvars=c("Line","hpi","Inoculation"))
+XLOC_013220.sum2 <- XLOC_013220.sum 
+XLOC_013220.sum2$hpi <- factor(XLOC_013220.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+XLOC_013220 <- ggplot(XLOC_013220.sum2  , aes(x=hpi, y=XLOC_013220, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="XLOC_013220", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=XLOC_013220-se, ymax=XLOC_013220+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+XLOC_013220
+
+## Line plot
+### XLOC_013220
+
+XLOC_013220_ln <- ggplot(XLOC_013220.sum  , aes(x=hpi, y=XLOC_013220)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_013220-se, ymax=XLOC_013220+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_013220", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_013220_ln 
+
+
+png(filename = "cistarget/XLOC_013220_ln.png", width = 5, height = 4, units = "in",  res = 300 )
+XLOC_013220_ln
+dev.off()
+
+
+pdf("plots/XLOC_013220.pdf", width = 4, height = 2.5)
+XLOC_013220_ln
+dev.off()
+
+
+### XLOC_013220
+XLOC_013220.sum <- summarySE(NC_linc_col, measurevar="XLOC_013220", groupvars=c("Line","hpi","Inoculation"))
+XLOC_013220.sum2 <- XLOC_013220.sum 
+XLOC_013220.sum2$hpi <- factor(XLOC_013220.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+
+## Line plot
+### XLOC_013220
+
+XLOC_013220_ln <- ggplot(XLOC_013220.sum  , aes(x=hpi, y=XLOC_013220)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_013220-se, ymax=XLOC_013220+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_013220", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_013220_ln 
+
+
+
+### XLOC_098355
+XLOC_098355.sum <- summarySE(NC_linc_col, measurevar="XLOC_098355", groupvars=c("Line","hpi","Inoculation"))
+XLOC_098355.sum2 <- XLOC_098355.sum 
+XLOC_098355.sum2$hpi <- factor(XLOC_098355.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+
+## Line plot
+### XLOC_098355
+
+XLOC_098355_ln <- ggplot(XLOC_098355.sum  , aes(x=hpi, y=XLOC_098355)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_098355-se, ymax=XLOC_098355+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_098355", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_098355_ln 
+
+
+### XLOC_088237
+XLOC_088237.sum <- summarySE(NC_linc_col, measurevar="XLOC_088237", groupvars=c("Line","hpi","Inoculation"))
+XLOC_088237.sum2 <- XLOC_088237.sum 
+XLOC_088237.sum2$hpi <- factor(XLOC_088237.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+
+## Line plot
+### XLOC_088237
+
+XLOC_088237_ln <- ggplot(XLOC_088237.sum  , aes(x=hpi, y=XLOC_088237)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_088237-se, ymax=XLOC_088237+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_088237", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_088237_ln 
+
+
+### XLOC_084885
+XLOC_084885.sum <- summarySE(NC_linc_col, measurevar="XLOC_084885", groupvars=c("Line","hpi","Inoculation"))
+XLOC_084885.sum2 <- XLOC_084885.sum 
+XLOC_084885.sum2$hpi <- factor(XLOC_084885.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+
+## Line plot
+### XLOC_084885
+
+XLOC_084885_ln <- ggplot(XLOC_084885.sum  , aes(x=hpi, y=XLOC_084885)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_084885-se, ymax=XLOC_084885+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_084885", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_084885_ln 
+
+### XLOC_088238
+XLOC_088238.sum <- summarySE(NC_linc_col, measurevar="XLOC_088238", groupvars=c("Line","hpi","Inoculation"))
+XLOC_088238.sum2 <- XLOC_088238.sum 
+XLOC_088238.sum2$hpi <- factor(XLOC_088238.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+
+## Line plot
+### XLOC_088238
+
+XLOC_088238_ln <- ggplot(XLOC_088238.sum  , aes(x=hpi, y=XLOC_088238)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=XLOC_088238-se, ymax=XLOC_088238+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="XLOC_088238", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_088238_ln 
+
+
+
+
+### XLOC_063809
+XLOC_063809.sum <- summarySE(NC_linc_col, measurevar="XLOC_063809", groupvars=c("Line","hpi","Inoculation"))
+XLOC_063809.sum2 <- XLOC_063809.sum 
+XLOC_063809.sum2$hpi <- factor(XLOC_063809.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+XLOC_063809 <- ggplot(XLOC_063809.sum2  , aes(x=hpi, y=XLOC_063809, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="XLOC_063809", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=XLOC_063809-se, ymax=XLOC_063809+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+XLOC_063809
+
+XLOC_063809_ln <- ggplot(XLOC_063809.sum  , aes(x=hpi, y=XLOC_063809)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="", title="XLOC_063809", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_063809_ln 
+
+
+png(filename = "cistarget/XLOC_063809_ln_dash.png", width = 7, height = 4, units = "in",  res = 300 )
+XLOC_063809_ln
+dev.off()
+
+
+
+### XLOC_014629
+XLOC_014629.sum <- summarySE(NC_linc_col, measurevar="XLOC_014629", groupvars=c("Line","hpi","Inoculation"))
+XLOC_014629.sum2 <- XLOC_014629.sum 
+XLOC_014629.sum2$hpi <- factor(XLOC_014629.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+XLOC_014629 <- ggplot(XLOC_014629.sum2  , aes(x=hpi, y=XLOC_014629, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="XLOC_014629", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=XLOC_014629-se, ymax=XLOC_014629+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+XLOC_014629
+
+XLOC_014629_ln <- ggplot(XLOC_014629.sum  , aes(x=hpi, y=XLOC_014629)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="", title="XLOC_014629", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_014629_ln 
+
+
+png(filename = "cistarget/XLOC_014629_ln_dash.png", width = 7, height = 4, units = "in",  res = 300 )
+XLOC_014629_ln
+dev.off()
+
+### XLOC_053188
+XLOC_053188.sum <- summarySE(NC_linc_col, measurevar="XLOC_053188", groupvars=c("Line","hpi","Inoculation"))
+XLOC_053188.sum2 <- XLOC_053188.sum 
+XLOC_053188.sum2$hpi <- factor(XLOC_053188.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+XLOC_053188 <- ggplot(XLOC_053188.sum2  , aes(x=hpi, y=XLOC_053188, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="XLOC_053188", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=XLOC_053188-se, ymax=XLOC_053188+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+XLOC_053188
+
+XLOC_053188_ln <- ggplot(XLOC_053188.sum  , aes(x=hpi, y=XLOC_053188)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="", title="XLOC_053188", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_053188_ln 
+
+
+png(filename = "cistarget/XLOC_053188_ln_dash.png", width = 7, height = 4, units = "in",  res = 300 )
+XLOC_053188_ln
+dev.off()
+
+
+
+
+################################################################################################
+#TE contain lincRNAs
+
+
+NormalizedCount_TElinc <- as.data.frame(NC_DETEcontainlinc_pval)
+
+NC_DETElincT <- t(as.data.frame(NormalizedCount_TElinc))
+NC_DETElincT2 <- cbind(rownames(NC_DETElincT), data.frame(NC_DETElincT, row.names=NULL))
+
+colnames(NC_DETElincT2)[1] <- "ID" 
+
+NC_TElinc_col <- merge( coldata, NC_DETElincT2, by = "ID")
+
+NC_TElinc_col$Inoculation <- factor(NC_TElinc_col$Inoculation, levels = c("control", "inoculated"))
+
+head(NC_TElinc_col)[,1:15]
+
+NC_TElinc_col$XLOC_059371
+
+## XLOC_059371 (only one lincRNA that is found in common in resistant lines)
+XLOC_059371.sum <- summarySE(NC_linc_col, measurevar="XLOC_059371", groupvars=c("Line","hpi","Inoculation"))
+XLOC_059371.sum2 <- XLOC_059371.sum 
+XLOC_059371.sum2$hpi <- factor(XLOC_059371.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+XLOC_059371 <- ggplot(XLOC_059371.sum2  , aes(x=hpi, y=XLOC_059371, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="XLOC_059371", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=XLOC_059371-se, ymax=XLOC_059371+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+XLOC_059371
+
+XLOC_059371_ln <- ggplot(XLOC_059371.sum  , aes(x=hpi, y=XLOC_059371)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+    labs(y="", title="XLOC_059371", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+XLOC_059371_ln 
+
+
+png(filename = "plots/XLOC_059371_ln.png", width = 5, height = 3, units = "in",  res = 300 )
+XLOC_059371_ln
+dev.off()
+
+
+
+pdf("plots/XLOC_059371_ln.pdf", width = 5, height = 3)
+XLOC_059371_ln
+dev.off()
+
+```
+
+
+# Plot for interesting DEGs that are targets of lincRNA
+```{r}
+NormalizedCount <- as.data.frame(NC_DEG)
+
+NC <- t(as.data.frame(NormalizedCount))
+NC2 <- cbind(rownames(NC), data.frame(NC, row.names=NULL))
+
+colnames(NC2)[1] <- "ID" 
+
+NC_col <- merge( coldata, NC2, by = "ID")
+
+NC_col$Inoculation <- factor(NC_col$Inoculation, levels = c("control", "inoculated"))
+
+head(NC_col)[,1:15]
+
+
+## Bar plot
+### Glyma.11G152400
+Glyma.11G152400.sum <- summarySE(NC_col, measurevar="Glyma.11G152400", groupvars=c("Line","hpi","Inoculation"))
+Glyma.11G152400.sum2 <- Glyma.11G152400.sum 
+Glyma.11G152400.sum2$hpi <- factor(Glyma.11G152400.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.11G152400 <- ggplot(Glyma.11G152400.sum2  , aes(x=hpi, y=Glyma.11G152400, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.11G152400", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.11G152400-se, ymax=Glyma.11G152400+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.11G152400
+
+## Line plot
+### Glyma.11G152400
+
+Glyma.11G152400_ln <- ggplot(Glyma.11G152400.sum  , aes(x=hpi, y=Glyma.11G152400)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.11G152400-se, ymax=Glyma.11G152400+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.11G152400", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.11G152400_ln 
+
+
+png(filename = "cistarget/Glyma.11G152400_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.11G152400_ln
+dev.off()
+
+
+
+## Bar plot
+### Glyma.U031513
+Glyma.U031513.sum <- summarySE(NC_col, measurevar="Glyma.U031513", groupvars=c("Line","hpi","Inoculation"))
+Glyma.U031513.sum2 <- Glyma.U031513.sum 
+Glyma.U031513.sum2$hpi <- factor(Glyma.U031513.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.U031513 <- ggplot(Glyma.U031513.sum2  , aes(x=hpi, y=Glyma.U031513, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.U031513", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.U031513-se, ymax=Glyma.U031513+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.U031513
+
+## Line plot
+### Glyma.U031513
+
+Glyma.U031513_ln <- ggplot(Glyma.U031513.sum  , aes(x=hpi, y=Glyma.U031513)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.U031513-se, ymax=Glyma.U031513+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.U031513", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.U031513_ln 
+
+
+png(filename = "cistarget/Glyma.U031513_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.U031513_ln
+dev.off()
+
+
+
+
+## Bar plot
+### Glyma.02G243300
+Glyma.02G243300.sum <- summarySE(NC_col, measurevar="Glyma.02G243300", groupvars=c("Line","hpi","Inoculation"))
+Glyma.02G243300.sum2 <- Glyma.02G243300.sum 
+Glyma.02G243300.sum2$hpi <- factor(Glyma.02G243300.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.02G243300 <- ggplot(Glyma.02G243300.sum2  , aes(x=hpi, y=Glyma.02G243300, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.02G243300", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.02G243300-se, ymax=Glyma.02G243300+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.02G243300
+
+## Line plot
+### Glyma.02G243300
+
+Glyma.02G243300_ln <- ggplot(Glyma.02G243300.sum  , aes(x=hpi, y=Glyma.02G243300)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.02G243300-se, ymax=Glyma.02G243300+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.02G243300", x="hpi") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.02G243300_ln 
+
+
+png(filename = "cistarget/Glyma.02G243300_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.02G243300_ln
+dev.off()
+
+
+
+
+## Bar plot
+### Glyma.10G253700
+Glyma.10G253700.sum <- summarySE(NC_col, measurevar="Glyma.10G253700", groupvars=c("Line","hpi","Inoculation"))
+Glyma.10G253700.sum2 <- Glyma.10G253700.sum 
+Glyma.10G253700.sum2$hpi <- factor(Glyma.10G253700.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.10G253700 <- ggplot(Glyma.10G253700.sum2  , aes(x=hpi, y=Glyma.10G253700, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.10G253700", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.10G253700-se, ymax=Glyma.10G253700+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.10G253700
+
+## Line plot
+### Glyma.10G253700
+
+Glyma.10G253700_ln <- ggplot(Glyma.10G253700.sum  , aes(x=hpi, y=Glyma.10G253700)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.10G253700-se, ymax=Glyma.10G253700+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.10G253700", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.10G253700_ln 
+
+
+png(filename = "cistarget/Glyma.10G253700_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.10G253700_ln
+dev.off()
+
+
+
+
+## Bar plot
+### Glyma.03G236200
+Glyma.03G236200.sum <- summarySE(NC_col, measurevar="Glyma.03G236200", groupvars=c("Line","hpi","Inoculation"))
+Glyma.03G236200.sum2 <- Glyma.03G236200.sum 
+Glyma.03G236200.sum2$hpi <- factor(Glyma.03G236200.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.03G236200 <- ggplot(Glyma.03G236200.sum2  , aes(x=hpi, y=Glyma.03G236200, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.03G236200", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.03G236200-se, ymax=Glyma.03G236200+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.03G236200
+
+## Line plot
+### Glyma.03G236200
+
+Glyma.03G236200_ln <- ggplot(Glyma.03G236200.sum  , aes(x=hpi, y=Glyma.03G236200)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.03G236200-se, ymax=Glyma.03G236200+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.03G236200", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.03G236200_ln 
+
+
+png(filename = "cistarget/Glyma.03G236200_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.03G236200_ln
+dev.off()
+
+
+
+### Glyma.09G210600 (RPS gene cf and ne up at 16 hpi)
+## Bar plot
+Glyma.09G210600.sum <- summarySE(NC_col, measurevar="Glyma.09G210600", groupvars=c("Line","hpi","Inoculation"))
+Glyma.09G210600.sum2 <- Glyma.09G210600.sum 
+Glyma.09G210600.sum2$hpi <- factor(Glyma.09G210600.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.09G210600 <- ggplot(Glyma.09G210600.sum2  , aes(x=hpi, y=Glyma.09G210600, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.09G210600", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.09G210600-se, ymax=Glyma.09G210600+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.09G210600
+
+## Line plot
+### Glyma.09G210600
+
+Glyma.09G210600_ln <- ggplot(Glyma.09G210600.sum  , aes(x=hpi, y=Glyma.09G210600)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.09G210600-se, ymax=Glyma.09G210600+se, color = Line), 
+#                  width=.2) +
+    labs(y="Transcript levels\n(normalized counts)", title="Glyma.09G210600 (RPS3)", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.09G210600_ln 
+
+
+png(filename = "../../DEG_analysis/DESeq2/results/plots/rps_Glyma.09G210600_ln.png", width = 6, height = 3.5, units = "in",  res = 300 )
+Glyma.09G210600_ln
+dev.off()
+
+
+
+### Glyma_U031414 (RPS gene cf and ne up at 16 hpi)
+## Bar plot
+Glyma_U031414.sum <- summarySE(NC_col, measurevar="Glyma_U031414", groupvars=c("Line","hpi","Inoculation"))
+Glyma_U031414.sum2 <- Glyma_U031414.sum 
+Glyma_U031414.sum2$hpi <- factor(Glyma_U031414.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma_U031414 <- ggplot(Glyma_U031414.sum2  , aes(x=hpi, y=Glyma_U031414, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma_U031414", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma_U031414-se, ymax=Glyma_U031414+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma_U031414
+
+## Line plot
+### Glyma_U031414
+
+Glyma_U031414_ln <- ggplot(Glyma_U031414.sum  , aes(x=hpi, y=Glyma_U031414)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma_U031414-se, ymax=Glyma_U031414+se, color = Line), 
+#                  width=.2) +
+    labs(y="Transcript levels\n(normalized counts)", title="Glyma_U031414 (RPS2)", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma_U031414_ln 
+
+
+png(filename = "../../DEG_analysis/DESeq2/results/plots/rps_Glyma_U031414_ln.png", width = 6, height = 3.5, units = "in",  res = 300 )
+Glyma_U031414_ln
+dev.off()
+
+
+
+```
+
+
+
+# Plot for intereting genes (not DEGs) 
+
+```{r}
+NormalizedCount_gene <- as.data.frame(NC_gene)
+
+NC_gene <- t(as.data.frame(NormalizedCount_gene))
+NC_gene2 <- cbind(rownames(NC_gene), data.frame(NC_gene, row.names=NULL))
+
+colnames(NC_gene2)[1] <- "ID" 
+
+NC_col_gene <- merge( coldata, NC_gene2, by = "ID")
+
+NC_col_gene$Inoculation <- factor(NC_col_gene$Inoculation, levels = c("control", "inoculated"))
+
+head(NC_col_gene)[,1:15]
+
+
+### Glyma.13G038300
+## Bar plot
+
+Glyma.13G038300.sum <- summarySE(NC_col_gene, measurevar="Glyma.13G038300", groupvars=c("Line","hpi","Inoculation"))
+Glyma.13G038300.sum2 <- Glyma.13G038300.sum 
+Glyma.13G038300.sum2$hpi <- factor(Glyma.13G038300.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.13G038300 <- ggplot(Glyma.13G038300.sum2  , aes(x=hpi, y=Glyma.13G038300, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.13G038300", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.13G038300-se, ymax=Glyma.13G038300+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.13G038300
+
+## Line plot
+### Glyma.13G038300
+
+Glyma.13G038300_ln <- ggplot(Glyma.13G038300.sum  , aes(x=hpi, y=Glyma.13G038300)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.13G038300-se, ymax=Glyma.13G038300+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.13G038300", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.13G038300_ln 
+
+
+png(filename = "cistarget/Glyma.13G038300_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.13G038300_ln
+dev.off()
+
+
+### Glyma.07G259900
+## Bar plot
+
+Glyma.07G259900.sum <- summarySE(NC_col_gene, measurevar="Glyma.07G259900", groupvars=c("Line","hpi","Inoculation"))
+Glyma.07G259900.sum2 <- Glyma.07G259900.sum 
+Glyma.07G259900.sum2$hpi <- factor(Glyma.07G259900.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.07G259900 <- ggplot(Glyma.07G259900.sum2  , aes(x=hpi, y=Glyma.07G259900, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.07G259900", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.07G259900-se, ymax=Glyma.07G259900+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.07G259900
+
+## Line plot
+### Glyma.07G259900
+
+Glyma.07G259900_ln <- ggplot(Glyma.07G259900.sum  , aes(x=hpi, y=Glyma.07G259900)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.07G259900-se, ymax=Glyma.07G259900+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.07G259900", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.07G259900_ln 
+
+
+png(filename = "cistarget/Glyma.07G259900_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.07G259900_ln
+dev.off()
+
+
+
+
+### Glyma.20G137802
+## Bar plot
+
+Glyma.20G137802.sum <- summarySE(NC_col_gene, measurevar="Glyma.20G137802", groupvars=c("Line","hpi","Inoculation"))
+Glyma.20G137802.sum2 <- Glyma.20G137802.sum 
+Glyma.20G137802.sum2$hpi <- factor(Glyma.20G137802.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.20G137802 <- ggplot(Glyma.20G137802.sum2  , aes(x=hpi, y=Glyma.20G137802, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.20G137802", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.20G137802-se, ymax=Glyma.20G137802+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.20G137802
+
+## Line plot
+### Glyma.20G137802
+
+Glyma.20G137802_ln <- ggplot(Glyma.20G137802.sum  , aes(x=hpi, y=Glyma.20G137802)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.20G137802-se, ymax=Glyma.20G137802+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.20G137802", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.20G137802_ln 
+
+
+png(filename = "cistarget/Glyma.20G137802_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.20G137802_ln
+dev.off()
+
+
+
+
+### Glyma.16G135200
+## Bar plot
+
+Glyma.16G135200.sum <- summarySE(NC_col_gene, measurevar="Glyma.16G135200", groupvars=c("Line","hpi","Inoculation"))
+Glyma.16G135200.sum2 <- Glyma.16G135200.sum 
+Glyma.16G135200.sum2$hpi <- factor(Glyma.16G135200.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.16G135200 <- ggplot(Glyma.16G135200.sum2  , aes(x=hpi, y=Glyma.16G135200, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.16G135200", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.16G135200-se, ymax=Glyma.16G135200+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.16G135200
+
+## Line plot
+### Glyma.16G135200
+
+Glyma.16G135200_ln <- ggplot(Glyma.16G135200.sum  , aes(x=hpi, y=Glyma.16G135200)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.16G135200-se, ymax=Glyma.16G135200+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.16G135200", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.16G135200_ln 
+
+
+png(filename = "cistarget/Glyma.16G135200_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.16G135200_ln
+dev.off()
+
+
+
+#x="hpi"
+#y="Transcript levels (normalized counts)"
+
+
+
+
+### Glyma.16G103500 (CMT2)
+## Bar plot
+
+Glyma.16G103500.sum <- summarySE(NC_col_gene, measurevar="Glyma.16G103500", groupvars=c("Line","hpi","Inoculation"))
+Glyma.16G103500.sum2 <- Glyma.16G103500.sum 
+Glyma.16G103500.sum2$hpi <- factor(Glyma.16G103500.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.16G103500 <- ggplot(Glyma.16G103500.sum2  , aes(x=hpi, y=Glyma.16G103500, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.16G103500", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.16G103500-se, ymax=Glyma.16G103500+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.16G103500
+
+## Line plot
+### Glyma.16G103500
+
+Glyma.16G103500_ln <- ggplot(Glyma.16G103500.sum  , aes(x=hpi, y=Glyma.16G103500)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.16G103500-se, ymax=Glyma.16G103500+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.16G103500", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.16G103500_ln 
+
+
+png(filename = "cistarget/Glyma.16G103500_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.16G103500_ln
+dev.off()
+
+
+
+### Glyma.19G006100 (DRM2)
+## Bar plot
+
+Glyma.19G006100.sum <- summarySE(NC_col_gene, measurevar="Glyma.19G006100", groupvars=c("Line","hpi","Inoculation"))
+Glyma.19G006100.sum2 <- Glyma.19G006100.sum 
+Glyma.19G006100.sum2$hpi <- factor(Glyma.19G006100.sum2$hpi, levels = c("2", "4", "8", "16"))
+
+Glyma.19G006100 <- ggplot(Glyma.19G006100.sum2  , aes(x=hpi, y=Glyma.19G006100, fill=Inoculation)) + 
+    theme_bw() +
+    geom_bar(position=position_dodge(), stat="identity", color="grey20") +
+    labs(y="", title="Glyma.19G006100", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+    geom_errorbar(aes(ymin=Glyma.19G006100-se, ymax=Glyma.19G006100+se),
+                  size=.3, color="grey20",
+                  width=.2,                    
+                  position=position_dodge(.9)) +
+    scale_fill_manual(values=c("grey90", "grey40"),
+                      breaks=c("control", "inoculated"))+       
+  theme(panel.grid.major = element_blank()) +
+  scale_x_discrete(labels=c("2" = "2h", "4" = "4h", "8" = "8h", "16" = "16h")) +
+  facet_wrap( ~ Line)
+
+Glyma.19G006100
+
+## Line plot
+### Glyma.19G006100
+
+Glyma.19G006100_ln <- ggplot(Glyma.19G006100.sum  , aes(x=hpi, y=Glyma.19G006100)) + 
+    theme_bw() +
+    geom_line(aes(color = Line, linetype = Inoculation), size = 1) +
+    geom_point(aes(color = Line), size= 2 ) +
+#      geom_errorbar(aes(ymin=Glyma.19G006100-se, ymax=Glyma.19G006100+se, color = Line), 
+#                  width=.2) +
+    labs(y="", title="Glyma.19G006100", x="") +
+    theme(axis.text.y=element_text(size=9),axis.text.x=element_text(size=12),
+          axis.title=element_text(size=15), strip.text = element_text(size=12),
+          legend.text = element_text(size=12),legend.title = element_text(size=13)) +
+  theme(panel.grid.major = element_blank()) +
+  theme(panel.grid.minor = element_blank()) +
+  scale_linetype_manual(values=c("dotted", "solid")) +
+  scale_color_manual(values=c('blue1', 'navy', 'tan1', 'darkorange3'))
+
+Glyma.19G006100_ln 
+
+
+png(filename = "cistarget/Glyma.19G006100_ln.png", width = 7, height = 4, units = "in",  res = 300 )
+Glyma.19G006100_ln
+dev.off()
+
+
+```
+
+
+#merge plots
+```{r}
+linep_all <- ggarrange(XLOC_014629_ln, XLOC_041658_ln, XLOC_063809_ln, XLOC_071556_ln, XLOC_072376_ln,
+                    Glyma.11G152400_ln, Glyma.U031513_ln, Glyma.02G243300_ln, Glyma.10G253700_ln, Glyma.03G236200_ln,
+                    ncol = 5, nrow = 2, 
+                    common.legend = TRUE, legend = "bottom",
+                    align = "hv")
+linep_all2 <- annotate_figure(linep_all,
+                left = text_grob("Transcript levels (normalized counts)", color = "black", rot = 90, size = 15))
+
+
+png(filename = "cistarget/plot/linep_all.png", width = 14, height = 6, units = "in",  res = 300 )
+linep_all2
+dev.off()
+
+
+
+
+
+common_all <- ggarrange(XLOC_053188_ln, XLOC_013220_ln, XLOC_098355_ln, XLOC_088237_ln, 
+                        XLOC_014629_ln, XLOC_084885_ln, XLOC_088238_ln, XLOC_063809_ln, 
+                        ncol = 8, 
+                    common.legend = TRUE, legend = "bottom",
+                    align = "hv")
+common_all2 <- annotate_figure(common_all,
+                left = text_grob("Transcript levels \n (normalized counts)", color = "black", rot = 90, size = 13))
+
+
+
+pdf("plots/DEnoTElinc_transcript2.pdf", width = 18, height = 2.5)
+common_all2
+dev.off()
+
+
+png(filename = "cistarget/plot/common_all.png", width = 11, height = 3, units = "in",  res = 300 )
+common_all2
+dev.off()
+
+png(filename = "NonTE/pval0.01/plot/common_all.png", width = 11, height = 3, units = "in",  res = 300 )
+common_all2
+dev.off()
+
+```
+
+
