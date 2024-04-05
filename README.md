@@ -14,3 +14,10 @@ Transcriptomic and epigenetic responses shed light on soybean resistance to Phyt
 doi: https://doi.org/10.1101/2024.01.27.577583
 
 Gwonjin Lee, Charlotte N. DiBiase, Beibei Liu, Tong Li, Austin G. McCoy, Martin I. Chilvers, Lianjun Sun, Dechun Wang, Feng Lin, Meixia Zhao
+
+
+
+Example output
+
+![image](https://github.com/GwonjinLee/Identification-and-Target-Gene-Prediction-of-Stress-Responsive-lncRNAs/assets/78930951/eb80b2ca-be5d-4a9e-bf0a-faa51455d48f)
+
