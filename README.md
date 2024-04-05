@@ -10,5 +10,7 @@ This is the bioinformatics pipeline for
 
 
 Transcriptomic and epigenetic responses shed light on soybean resistance to Phytophthora sansomeana
+
 doi: https://doi.org/10.1101/2024.01.27.577583
+
 Gwonjin Lee, Charlotte N. DiBiase, Beibei Liu, Tong Li, Austin G. McCoy, Martin I. Chilvers, Lianjun Sun, Dechun Wang, Feng Lin, Meixia Zhao
